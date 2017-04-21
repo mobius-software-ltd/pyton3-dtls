@@ -189,34 +189,36 @@ class DtlsSocket(object):
 
         except socket.timeout:
             # __Nothing__ received from any client
-            raise socket.timeout
+            pass
 
-        try:
-            for conn in r:
-                _last_peer = conn.getpeername() if conn._connected else None
-                if self._sockIsServerSock(conn):
-                    # Connect
-                    self._clientAccept(conn)
-                else:
-                    # Handshake
-                    if not self._clientHandshakeDone(conn):
-                        self._clientDoHandshake(conn)
-                    # Normal read
+        else:
+            try:
+                for conn in r:
+                    _last_peer = conn.getpeername() if conn._connected else None
+                    if self._sockIsServerSock(conn):
+                        # Connect
+                        self._clientAccept(conn)
                     else:
-                        buf = self._clientRead(conn, bufsize)
-                        if buf:
-                            if conn in self._clients:
-                                return buf, self._clients[conn].getAddr()
-                            else:
-                                _logger.debug('Received data from an already disconnected client!')
+                        # Handshake
+                        if not self._clientHandshakeDone(conn):
+                            self._clientDoHandshake(conn)
+                        # Normal read
+                        else:
+                            buf = self._clientRead(conn, bufsize)
+                            if buf:
+                                if conn in self._clients:
+                                    return buf, self._clients[conn].getAddr()
+                                else:
+                                    _logger.debug('Received data from an already disconnected client!')
 
-        except Exception as e:
-            setattr(e, 'peer', _last_peer)
-            raise e
+            except Exception as e:
+                setattr(e, 'peer', _last_peer)
+                raise e
 
         try:
             for conn in self._getClientReadingSockets():
-                if conn.get_timeout():
+                timeleft = conn.get_timeout()
+                if timeleft is not None and timeleft == 0:
                     ret = conn.handle_timeout()
                     _logger.debug('Retransmission triggered for %s: %d' % (str(self._clients[conn].getAddr()), ret))
 
