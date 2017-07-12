@@ -219,17 +219,17 @@ class DtlsSocket(object):
                             self._clientDoHandshake(conn)
                         # Normal read
                         else:
-							buf = self._clientRead(conn, bufsize)
-							if buf:
-								self._clients[conn].updateTimestamp()
-								if conn in self._clients:
-									return buf, self._clients[conn].getAddr()
-								else:
-									_logger.debug('Received data from an already disconnected client!')
+                            buf = self._clientRead(conn, bufsize)
+                            if buf:
+                                self._clients[conn].updateTimestamp()
+                                if conn in self._clients:
+                                    return buf, self._clients[conn].getAddr()
+                                else:
+                                    _logger.debug('Received data from an already disconnected client!')
 
-			except Exception as e:
-				setattr(e, 'peer', _last_peer)
-				raise e
+            except Exception as e:
+                setattr(e, 'peer', _last_peer)
+                raise e
 
         try:
             for conn in self._getClientReadingSockets():
