@@ -1,3 +1,29 @@
+2017-04-27  Ray Brown  <code@liquibits.com>
+
+	Release 1.2.3
+
+	* dtls/wrapper.py: Add optional parameter to DtlsSocket: client_timeout (seconds). If client_timeout is specified, clients that have not communicated within the time frame will be dropped.
+	* setup.py: Version incremented to 1.2.3
+	* dtls/__init__.py: Increment version
+
+2017-04-10  Ray Brown  <code@liquibits.com>
+
+	Release 1.2.2
+
+	Produce a Pure Python Wheel instead of a source distribution for Linux. This speeds up installation and simplifies distribution building.
+
+	* setup.py: Drop support for sdist; add support for bdist_wheel without --plat-name switch; persist README.rst; increment version
+	* dtls/__init__.py: Increment version
+
+2017-04-06  Ray Brown  <code@liquibits.com>
+
+	Installation Fixes and Improvements
+
+	Installation as well as distribution generation are now simplified. With the elimination of MinGW support there is now a unique set of platform binaries for 32-bit and 64-bit Windows. Pip will now automatically choose the proper binary wheel or the source distribution, depending under which platform and Python version it is being invoked.
+
+	* README.md: add installation section
+	* setup.py: rewrite to use bdist_wheel for Windows
+
 2017-04-03  Ray Brown  <ray@Virtor10>
 
 	Release 1.2.0
