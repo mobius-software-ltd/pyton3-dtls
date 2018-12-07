@@ -31,8 +31,8 @@ interpreter.
 """
 
 from logging import getLogger
-from openssl import *
-from util import _Rsrc, _BIO
+from .openssl import *
+from .util import _Rsrc, _BIO
 
 _logger = getLogger(__name__)
 

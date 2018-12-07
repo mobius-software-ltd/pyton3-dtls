@@ -59,7 +59,7 @@ class BasicTests(unittest.TestCase):
         # A crude test for the legacy API
         try:
             ssl.sslwrap_simple(socket.socket(AF_INET4_6, socket.SOCK_DGRAM))
-        except IOError, e:
+        except IOError as e:
             if e.errno == 32: # broken pipe when ssl_sock.do_handshake(), this test doesn't care about that
                 pass
             else:
@@ -67,7 +67,7 @@ class BasicTests(unittest.TestCase):
         try:
             ssl.sslwrap_simple(socket.socket(AF_INET4_6,
                                              socket.SOCK_DGRAM)._sock)
-        except IOError, e:
+        except IOError as e:
             if e.errno == 32: # broken pipe when ssl_sock.do_handshake(), this test doesn't care about that
                 pass
             else:
@@ -281,7 +281,7 @@ class NetworkedTests(unittest.TestCase):
                     count += 1
                     s.do_handshake()
                     break
-                except ssl.SSLError, err:
+                except ssl.SSLError as err:
                     if err.args[0] == ssl.SSL_ERROR_WANT_READ:
                         while True:
                             to = s.get_timeout()
@@ -601,7 +601,7 @@ class AsyncoreEchoServer(threading.Thread):
             def _do_ssl_handshake(self):
                 try:
                     self.socket.do_handshake()
-                except ssl.SSLError, err:
+                except ssl.SSLError as err:
                     if err.args[0] in (ssl.SSL_ERROR_WANT_READ,
                                        ssl.SSL_ERROR_WANT_WRITE,
                                        ssl.SSL_ERROR_SSL):
@@ -609,7 +609,7 @@ class AsyncoreEchoServer(threading.Thread):
                     elif err.args[0] == ssl.SSL_ERROR_EOF:
                         return self.handle_close()
                     raise
-                except socket.error, err:
+                except socket.error as err:
                     if err.args[0] == errno.ECONNABORTED:
                         return self.handle_close()
                 else:
@@ -861,10 +861,10 @@ def bad_cert_test(certfile):
                                 certfile=certfile,
                                 ssl_version=ssl.PROTOCOL_DTLSv1)
             s.connect((HOST, server.port))
-        except ssl.SSLError, x:
+        except ssl.SSLError as x:
             if test_support.verbose:
                 sys.stdout.write("\nSSLError is %s\n" % x[1])
-        except socket.error, x:
+        except socket.error as x:
             if test_support.verbose:
                 sys.stdout.write("\nsocket.error is %s\n" % x[1])
         else:
@@ -1398,12 +1398,12 @@ def test_main(verbose=True):
     do_patch()
     for demux in "platform-native", "routing":
         for AF_INET4_6 in socket.AF_INET, socket.AF_INET6:
-            print "Suite run: demux: %s, protocol: %d" % (demux, AF_INET4_6)
+            print("Suite run: demux: %s, protocol: %d" % (demux, AF_INET4_6))
             hostname_for_protocol(AF_INET4_6)
             res = unittest.main(exit=False).result.wasSuccessful()
             if not res:
-                print "Suite run failed: demux: %s, protocol: %d" % (
-                    demux, AF_INET4_6)
+                print("Suite run failed: demux: %s, protocol: %d" % (
+                    demux, AF_INET4_6))
                 sys.exit(True)
         if not force_routing_demux():
             break

@@ -35,9 +35,9 @@ from logging import getLogger
 
 import ssl
 import socket
-from patch import do_patch
+from .patch import do_patch
 do_patch()
-from sslconnection import SSLContext, SSL
+from .sslconnection import SSLContext, SSL
 import err as err_codes
 
 _logger = getLogger(__name__)
@@ -81,7 +81,7 @@ class DtlsSocket(object):
 
         def getAddr(self):
             return self.host, self.port
-        
+
         def updateTimestamp(self):
             if self.timeout != None:
                 self.last_update = time.time()
@@ -91,7 +91,7 @@ class DtlsSocket(object):
                 return False
             else:
                 return (time.time() - self.last_update) > self.timeout
-        
+
 
     def __init__(self,
                  sock=None,

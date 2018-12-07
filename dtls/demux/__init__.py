@@ -35,10 +35,10 @@ platforms.
 import sys
 
 if sys.platform.startswith('win') or sys.platform.startswith('cygwin'):
-    from router import UDPDemux
+    from .router import UDPDemux
     _routing = True
 else:
-    from osnet import UDPDemux
+    from .osnet import UDPDemux
     _routing = False
 _default_demux = None
 

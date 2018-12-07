@@ -7,9 +7,9 @@ from dtls import do_patch
 do_patch()
 
 cert_path = path.join(path.abspath(path.dirname(__file__)), "certs")
-sock = ssl.wrap_socket(socket(AF_INET, SOCK_DGRAM), cert_reqs=ssl.CERT_REQUIRED, ca_certs=path.join(cert_path, "ca-cert.pem"))
-sock.connect(('localhost', 28000))
+sock = ssl.wrap_socket(socket(AF_INET, SOCK_DGRAM), cert_reqs=ssl.CERT_NONE, ca_certs=path.join(cert_path, "ca-cert.pem"))
+sock.connect(('127.0.0.1', 5555))
 sock.send('Hi there')
-print sock.recv()
+print(sock.recv())
 sock.unwrap()
 sock.shutdown(SHUT_RDWR)

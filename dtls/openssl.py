@@ -38,13 +38,13 @@ import socket
 from logging import getLogger
 from os import path
 from datetime import timedelta
-from err import openssl_error
-from err import SSL_ERROR_NONE
-from util import _EC_KEY, _BIO
+from .err import openssl_error
+from .err import SSL_ERROR_NONE
+from .util import _EC_KEY, _BIO
 import ctypes
 from ctypes import CDLL
 from ctypes import CFUNCTYPE
-from ctypes import c_void_p, c_int, c_long, c_uint, c_ulong, c_char_p, c_size_t
+from ctypes import c_void_p, c_int, c_uint64, c_long, c_uint, c_ulong, c_char_p, c_size_t
 from ctypes import c_short, c_ushort, c_ubyte, c_char
 from ctypes import byref, POINTER, addressof
 from ctypes import Structure, Union
@@ -60,20 +60,20 @@ _logger = getLogger(__name__)
 #
 if sys.platform.startswith('win'):
     dll_path = path.abspath(path.dirname(__file__))
-    cryptodll_path = path.join(dll_path, "libeay32.dll")
-    ssldll_path = path.join(dll_path, "ssleay32.dll")
+    cryptodll_path = path.join(dll_path, "libcrypto.dll")
+    ssldll_path = path.join(dll_path, "libssl.dll")
     libcrypto = CDLL(cryptodll_path)
     libssl = CDLL(ssldll_path)
 else:
-    libcrypto = CDLL("libcrypto.so.1.0.0")
-    libssl = CDLL("libssl.so.1.0.0")
+    libcrypto = CDLL("libcrypto.so.1.1")
+    libssl = CDLL("libssl.so.1.1")
 
 #
 # Integer constants - exported
 #
 BIO_NOCLOSE = 0x00
 BIO_CLOSE = 0x01
-SSLEAY_VERSION = 0
+OPENSSL_VERSION = 0
 SSL_OP_NO_QUERY_MTU = 0x00001000
 SSL_OP_NO_COMPRESSION = 0x00020000
 SSL_VERIFY_NONE = 0x00
@@ -156,6 +156,10 @@ DTLS_CTRL_GET_TIMEOUT = 73
 DTLS_CTRL_HANDLE_TIMEOUT = 74
 DTLS_CTRL_LISTEN = 75
 DTLS_CTRL_SET_LINK_MTU = 120
+
+SSL_CTRL_SET_MAX_SEND_FRAGMENT = 52
+SSL_CTRL_SET_SPLIT_SEND_FRAGMENT = 125
+SSL_CTRL_SET_MAX_PIPELINES = 126
 
 X509_NAME_MAXLEN = 256
 GETS_MAXLEN = 2048
@@ -537,7 +541,7 @@ def _make_function(name, lib, args, export=True, errcheck="default"):
     assert len(args)
 
     def type_subst(map_type):
-        if _subst.has_key(map_type):
+        if map_type in _subst:
             return _subst[map_type]
         return map_type
 
@@ -548,13 +552,14 @@ def _make_function(name, lib, args, export=True, errcheck="default"):
         pointer_return = True
     else:
         pointer_return = False
-    if not _sigs.has_key(sig):
+    if sig not in _sigs:
         _sigs[sig] = CFUNCTYPE(*sig)
     if export:
         glbl_name = name
         __all__.append(name)
     else:
         glbl_name = "_" + name
+    #print('opensslL564 func_name= ' + name)
     func = _sigs[sig]((name, lib), tuple((i[2] if len(i) > 2 else 1,
                                           i[1],
                                           i[3] if len(i) > 3 else None)
@@ -576,13 +581,14 @@ def _make_function(name, lib, args, export=True, errcheck="default"):
     if errcheck:
         func.errcheck = errcheck
     globals()[glbl_name] = func
+    #print('opensslL586 Add to globals ' + str(func.func_name))
 
 _subst = {c_long_parm: c_long}
 _sigs = {}
 __all__ = [
     # Constants
     "BIO_NOCLOSE", "BIO_CLOSE",
-    "SSLEAY_VERSION",
+    "OPENSSL_VERSION",
     "SSL_OP_NO_QUERY_MTU", "SSL_OP_NO_COMPRESSION",
     "SSL_VERIFY_NONE", "SSL_VERIFY_PEER",
     "SSL_VERIFY_FAIL_IF_NO_PEER_CERT", "SSL_VERIFY_CLIENT_ONCE",
@@ -602,7 +608,6 @@ __all__ = [
     "GEN_DIRNAME", "NID_subject_alt_name",
     "CRYPTO_LOCK",
     # Methods
-    "CRYPTO_set_locking_callback",
     "DTLSv1_get_timeout", "DTLSv1_handle_timeout",
     "DTLSv1_listen",
     "DTLS_set_link_mtu",
@@ -633,27 +638,23 @@ __all__ = [
     "OBJ_nid2sn",
     "X509_get_notAfter",
     "ASN1_item_d2i", "GENERAL_NAME_print",
-    "sk_value",
-    "sk_pop_free",
+    "OPENSSL_sk_value",
     "i2d_X509",
     "get_elliptic_curves",
+    "SSL_CTX_set_max_send_fragment",
+    "SSL_set_max_send_fragment",
+    "SSL_CTX_set_split_send_fragment",
+    "SSL_set_split_send_fragment",
+    "SSL_CTX_set_max_pipelines",
+    "SSL_set_max_pipelines",
 ]  # note: the following map adds to this list
 
-map(lambda x: _make_function(*x), (
-    ("SSL_library_init", libssl,
-     ((c_int, "ret"),)),
-    ("SSL_load_error_strings", libssl,
-     ((None, "ret"),)),
-    ("SSLeay", libcrypto,
-     ((c_long_parm, "ret"),)),
-    ("SSLeay_version", libcrypto,
-     ((c_char_p, "ret"), (c_int, "t"))),
-    ("CRYPTO_set_locking_callback", libcrypto,
-     ((None, "ret"), (c_void_p, "func")), False),
-    ("CRYPTO_get_id_callback", libcrypto,
-     ((c_void_p, "ret"),), True, None),
-    ("CRYPTO_num_locks", libcrypto,
-     ((c_int, "ret"),)),
+list(map(lambda x: _make_function(*x), (
+    ("OPENSSL_init_ssl", libssl,
+     #((c_int, "ret"),)),
+     ((c_int, "ret"), (c_uint64, "opts"),)),
+     ("OpenSSL_version", libcrypto,
+      ((c_char_p, "ret"), (c_int, "t"))),
     ("DTLS_server_method", libssl,
      ((DTLS_Method, "ret"),)),
     ("DTLSv1_server_method", libssl,
@@ -781,14 +782,12 @@ map(lambda x: _make_function(*x), (
      ((POINTER(X509V3_EXT_METHOD), "ret"), (POINTER(X509_EXTENSION), "ext")), True, errcheck_p),
     ("ASN1_item_d2i", libcrypto,
      ((c_void_p, "ret"), (c_void_p, "val"), (POINTER(POINTER(c_ubyte)), "in"), (c_long, "len"), (c_void_p, "it")), False, None),
-    ("sk_num", libcrypto,
+    ("OPENSSL_sk_num", libcrypto,
      ((c_int, "ret"), (STACK, "stack")), True, None),
-    ("sk_value", libcrypto,
+    ("OPENSSL_sk_value", libcrypto,
      ((c_void_p, "ret"), (STACK, "stack"), (c_int, "loc")), False),
     ("GENERAL_NAME_print", libcrypto,
      ((c_int, "ret"), (BIO, "out"), (POINTER(GENERAL_NAME), "gen")), False),
-    ("sk_pop_free", libcrypto,
-     ((None, "ret"), (STACK, "st"), (c_void_p, "func")), False),
     ("i2d_X509_bio", libcrypto,
      ((c_int, "ret"), (BIO, "bp"), (X509, "x")), False),
     ("SSL_get_current_cipher", libssl,
@@ -809,23 +808,12 @@ map(lambda x: _make_function(*x), (
      ((c_int, "ret"), (POINTER(c_char), "name")), True, None),
     ("EC_curve_nid2nist", libcrypto,
      ((c_char_p, "ret"), (c_int, "nid")), True, None),
-    ))
+    )))
 
 #
 # Wrappers - functions generally equivalent to OpenSSL library macros
 #
 _rvoid_int_int_charp_int = CFUNCTYPE(None, c_int, c_int, c_char_p, c_int)
-
-def CRYPTO_set_locking_callback(locking_function):
-    def py_locking_function(mode, n, file, line):
-        try:
-            locking_function(mode, n, file, line)
-        except:
-            _logger.exception("Thread locking failed")
-
-    global _locking_cb  # for keep-alive
-    _locking_cb = _rvoid_int_int_charp_int(py_locking_function)
-    _CRYPTO_set_locking_callback(_locking_cb)
 
 def SSL_CTX_set_session_cache_mode(ctx, mode):
     # Returns the previous value of mode
@@ -890,6 +878,24 @@ def SSL_CTX_set_info_callback(ctx, app_info_cb):
     global _info_callback
     _info_callback[ctx] = _rvoid_voidp_int_int(py_info_callback)
     _SSL_CTX_set_info_callback(ctx, _info_callback[ctx])
+
+def SSL_CTX_set_max_send_fragment(ctx, m):
+    return _SSL_CTX_ctrl(ctx,SSL_CTRL_SET_MAX_SEND_FRAGMENT,m, None)
+
+def SSL_set_max_send_fragment(ssl,m):
+    return _SSL_ctrl(ssl,SSL_CTRL_SET_MAX_SEND_FRAGMENT,m, None)
+
+def SSL_CTX_set_split_send_fragment(ctx,m):
+    return _SSL_CTX_ctrl(ctx,SSL_CTRL_SET_SPLIT_SEND_FRAGMENT,m, None)
+
+def SSL_set_split_send_fragment(ssl,m):
+    return _SSL_ctrl(ssl,SSL_CTRL_SET_SPLIT_SEND_FRAGMENT,m,None)
+
+def SSL_CTX_set_max_pipelines(ctx,m):
+    return _SSL_CTX_ctrl(ctx,SSL_CTRL_SET_MAX_PIPELINES,m,None)
+
+def SSL_set_max_pipelines(ssl,m):
+    return _SSL_ctrl(ssl,SSL_CTRL_SET_MAX_PIPELINES,m,None)
 
 def SSL_CTX_build_cert_chain(ctx, flags):
     return _SSL_CTX_ctrl(ctx, SSL_CTRL_BUILD_CERT_CHAIN, flags, None)
@@ -992,15 +998,7 @@ def SSL_read(ssl, length, buffer):
     return buf.raw[:res_len]
 
 def SSL_write(ssl, data):
-    if isinstance(data, str):
-        str_data = data
-    elif hasattr(data, "tobytes") and callable(data.tobytes):
-        str_data = data.tobytes()
-    elif isinstance(data, ctypes.Array):
-        str_data = data.raw
-    else:
-        str_data = str(data)
-    return _SSL_write(ssl, str_data, len(str_data))
+    return _SSL_write(ssl, data, len(data))
 
 def SSL_set_options(ssl, op):
     return _SSL_ctrl(ssl, SSL_CTRL_OPTIONS, op, None)
@@ -1140,18 +1138,13 @@ def ASN1_item_d2i(method, asn1_octet_string):
     return GENERAL_NAMES(func_ptr(None, byref(data_in),
                                   asn1_octet_string.length))
 
-def sk_value(stack, loc):
-    return cast(_sk_value(stack, loc), POINTER(stack.stack_element_type))
+def OPENSSL_sk_value(stack, loc):
+    return cast(_OPENSSL_sk_value(stack, loc), POINTER(stack.stack_element_type))
 
 def GENERAL_NAME_print(general_name):
     bio = _BIO(BIO_new(BIO_s_mem()))
     _GENERAL_NAME_print(bio.value, general_name)
     return BIO_gets(bio.value)
-
-_free_func = addressof(c_void_p.in_dll(libcrypto, "sk_free"))
-
-def sk_pop_free(stack):
-    _sk_pop_free(stack, _free_func)
 
 def i2d_X509(x509):
     bio = _BIO(BIO_new(BIO_s_mem()))
@@ -1160,7 +1153,7 @@ def i2d_X509(x509):
 
 def SSL_get_peer_cert_chain(ssl):
     stack = _SSL_get_peer_cert_chain(ssl)
-    num = sk_num(stack)
+    num = OPENSSL_sk_num(stack)
     certs = []
     if num:
         # why not use sk_value(): because it doesn't cast correct in this case?!

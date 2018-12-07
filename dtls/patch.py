@@ -34,18 +34,17 @@ has the following effects:
       PROTOCOL_DTLSv1 for the parameter ssl_version is supported
 """
 
-from socket import socket, getaddrinfo, _delegate_methods, error as socket_error
+from socket import socket, getaddrinfo, error as socket_error
 from socket import AF_INET, SOCK_STREAM, SOCK_DGRAM
 from ssl import PROTOCOL_SSLv23, CERT_NONE
 from types import MethodType
 from weakref import proxy
 import errno
 
-from sslconnection import SSLConnection, PROTOCOL_DTLS, PROTOCOL_DTLSv1, PROTOCOL_DTLSv1_2
-from sslconnection import DTLS_OPENSSL_VERSION_NUMBER, DTLS_OPENSSL_VERSION, DTLS_OPENSSL_VERSION_INFO
-from sslconnection import SSL_BUILD_CHAIN_FLAG_NONE, SSL_BUILD_CHAIN_FLAG_UNTRUSTED, \
+from .sslconnection import SSLConnection, PROTOCOL_DTLS, PROTOCOL_DTLSv1, PROTOCOL_DTLSv1_2
+from .sslconnection import SSL_BUILD_CHAIN_FLAG_NONE, SSL_BUILD_CHAIN_FLAG_UNTRUSTED, \
     SSL_BUILD_CHAIN_FLAG_NO_ROOT, SSL_BUILD_CHAIN_FLAG_CHECK, SSL_BUILD_CHAIN_FLAG_IGNORE_ERROR, SSL_BUILD_CHAIN_FLAG_CLEAR_ERROR
-from err import raise_as_ssl_module_error, patch_ssl_errors
+from .err import raise_as_ssl_module_error, patch_ssl_errors
 
 
 def do_patch():
@@ -63,9 +62,6 @@ def do_patch():
     ssl._PROTOCOL_NAMES[PROTOCOL_DTLS] = "DTLS"
     ssl._PROTOCOL_NAMES[PROTOCOL_DTLSv1] = "DTLSv1"
     ssl._PROTOCOL_NAMES[PROTOCOL_DTLSv1_2] = "DTLSv1.2"
-    ssl.DTLS_OPENSSL_VERSION_NUMBER = DTLS_OPENSSL_VERSION_NUMBER
-    ssl.DTLS_OPENSSL_VERSION = DTLS_OPENSSL_VERSION
-    ssl.DTLS_OPENSSL_VERSION_INFO = DTLS_OPENSSL_VERSION_INFO
     ssl.SSL_BUILD_CHAIN_FLAG_NONE = SSL_BUILD_CHAIN_FLAG_NONE
     ssl.SSL_BUILD_CHAIN_FLAG_UNTRUSTED = SSL_BUILD_CHAIN_FLAG_UNTRUSTED
     ssl.SSL_BUILD_CHAIN_FLAG_NO_ROOT = SSL_BUILD_CHAIN_FLAG_NO_ROOT
@@ -122,6 +118,12 @@ def _get_server_certificate(addr, ssl_version=PROTOCOL_SSLv23, ca_certs=None):
     s.close()
     return ssl.DER_cert_to_PEM_cert(dercert)
 
+_keepalives = []
+def _sockclone_kwargs(old):
+    """Replace socket(_sock=old._sock) with socket(**_sockclone_kwargs(old))"""
+    _keepalives.append(old) # old socket would be gc'd and implicitly closed otherwise
+    return dict(family=old.family, type=old.type, proto=old.proto, fileno=old.fileno())
+
 def _SSLSocket_init(self, sock=None, keyfile=None, certfile=None,
                     server_side=False, cert_reqs=CERT_NONE,
                     ssl_version=PROTOCOL_DTLS, ca_certs=None,
@@ -154,15 +156,9 @@ def _SSLSocket_init(self, sock=None, keyfile=None, certfile=None,
                                     _context=_context)
     # DTLS code paths: datagram socket and newly accepted DTLS connection
     if is_datagram:
-        socket.__init__(self, _sock=sock._sock)
+        socket.__init__(self, **_sockclone_kwargs(sock))
     else:
-        socket.__init__(self, _sock=sock.get_socket(True)._sock)
-    # Copy instance initialization from SSLSocket class
-    for attr in _delegate_methods:
-        try:
-            delattr(self, attr)
-        except AttributeError:
-            pass
+        socket.__init__(self, **_sockclone_kwargs(sock.get_socket(True)))
 
     if certfile and not keyfile:
         keyfile = certfile
@@ -170,7 +166,7 @@ def _SSLSocket_init(self, sock=None, keyfile=None, certfile=None,
         # see if it's connected
         try:
             socket.getpeername(self)
-        except socket_error, e:
+        except socket_error as e:
             if e.errno != errno.ENOTCONN:
                 raise
             # no, no connection yet
@@ -224,7 +220,7 @@ def _SSLSocket_listen(self, ignored):
         raise ValueError("attempt to listen on connected SSLSocket!")
     if self._sslobj:
         return
-    self._sslobj = SSLConnection(socket(_sock=self._sock),
+    self._sslobj = SSLConnection(socket(**_sockclone_kwargs(self)),
                                  self.keyfile, self.certfile, True,
                                  self.cert_reqs, self.ssl_version,
                                  self.ca_certs,
@@ -254,7 +250,7 @@ def _SSLSocket_accept(self):
 def _SSLSocket_real_connect(self, addr, return_errno):
     if self._connected:
         raise ValueError("attempt to connect already-connected SSLSocket!")
-    self._sslobj = SSLConnection(socket(_sock=self._sock),
+    self._sslobj = SSLConnection(socket(**_sockclone_kwargs(self)),
                                  self.keyfile, self.certfile, False,
                                  self.cert_reqs, self.ssl_version,
                                  self.ca_certs,
