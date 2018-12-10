@@ -340,3 +340,5 @@ ports are welcome.
 
 As of release 1.2.0, PyDTLS is tested on Ubuntu 16.04 LTS as well as
 Microsoft Windows 10, using CPython 2.7.13.
+
+This version was transformed to run under Python 3.5.2, Ubuntu 16.04
