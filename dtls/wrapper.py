@@ -38,7 +38,7 @@ import socket
 from .patch import do_patch
 do_patch()
 from .sslconnection import SSLContext, SSL
-import err as err_codes
+from .err import *
 
 _logger = getLogger(__name__)
 
@@ -331,7 +331,7 @@ class DtlsSocket(object):
             self._clients[conn].handshake_done = True
 
         except ssl.SSLError as e:
-            if e.errno == err_codes.ERR_HANDSHAKE_TIMEOUT or e.args[0] == ssl.SSL_ERROR_WANT_READ:
+            if e.errno == ERR_HANDSHAKE_TIMEOUT or e.args[0] == ssl.SSL_ERROR_WANT_READ:
                 pass
             else:
                 self._clientDrop(conn, error=e)

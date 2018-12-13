@@ -553,20 +553,13 @@ class SSLConnection(object):
         if sys.platform.startswith('win') and not (SSL_get_options(self._ssl.value) & SSL_OP_NO_QUERY_MTU):
             SSL_set_options(self._ssl.value, SSL_OP_NO_QUERY_MTU)
             DTLS_set_link_mtu(self._ssl.value, 576)
-        
-        print('SSL_CTX_set_max_send_fragment returned:' + str(SSL_CTX_set_max_send_fragment(self._ctx.value,1400)))
-        print('SSL_CTX_set_split_send_fragment returned: ' + str(SSL_CTX_set_split_send_fragment(self._ctx.value,1400)))
-        print('SSL_CTX_set_max_pipelines returned: '+ str(SSL_CTX_set_max_pipelines(self._ctx.value,5)))
-        
-        #print('SSL_set_max_send_fragment returned:' + str(SSL_set_max_send_fragment(self._ssl.value,1000)))
-        #print('SSL_set_split_send_fragment returned:' + str(SSL_set_split_send_fragment(self._ssl.value,1000)))
-        #print('SSL_set_max_pipelines returned: '+ str(SSL_set_max_pipelines(self._ssl.value,5)))
 
         SSL_set_bio(self._ssl.value, self._rbio.value, self._wbio.value)
         self._rbio.disown()
         self._wbio.disown()
         if post_init:
             post_init()
+            
     def get_socket(self, inbound):
         """Retrieve a socket used by this connection
 

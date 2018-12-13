@@ -32,7 +32,7 @@ elliptic curve cryptography and more fine-grained configuration options.
 To install from PyPI, on any supported platform enter:
 
 ```
-pip install Dtls
+pip install python3-dtls
 ```
 
 ## Design Goals
