@@ -158,8 +158,8 @@ class _CallbackProxy(object):
     """
 
     def __init__(self, cbm):
-        self.ssl_connection = proxy(cbm.im_self)
-        self.ssl_func = cbm.im_func
+        self.ssl_connection = proxy(cbm.__self__)
+        self.ssl_func = cbm.__func__
 
     def __call__(self, *args, **kwargs):
         return self.ssl_func(self.ssl_connection, *args, **kwargs)
