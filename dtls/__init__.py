@@ -48,7 +48,7 @@ def _prep_bins():
     prebuilt_path = path.join(package_root, "prebuilt", platform + bit_suffix)
     config = {"MANIFEST_DIR": prebuilt_path}
     try:
-        execfile(path.join(prebuilt_path, "manifest.pycfg"), config)
+        exec(open(path.join(prebuilt_path, "manifest.pycfg")).read(), config)
     except IOError:
         return  # there are no prebuilts for this platform - nothing to do
     files = map(lambda x: path.join(prebuilt_path, x), config["FILES"])
@@ -60,6 +60,6 @@ def _prep_bins():
 
 _prep_bins()  # prepare before module imports
 
-from patch import do_patch
-from sslconnection import SSLContext, SSL, SSLConnection
-from demux import force_routing_demux, reset_default_demux
+from .patch import do_patch
+from .sslconnection import SSLContext, SSL, SSLConnection
+from .demux import force_routing_demux, reset_default_demux

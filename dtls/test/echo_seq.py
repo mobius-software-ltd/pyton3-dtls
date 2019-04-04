@@ -56,13 +56,13 @@ def main():
 
     while True:
         cnt += 1
-        print "Listen invocation: %d" % cnt
+        print("Listen invocation: %d" % cnt)
         peer_address = scn.listen()
         if peer_address:
-            print "Completed listening for peer: %s" % str(peer_address)
+            print("Completed listening for peer: %s" % str(peer_address))
             break
 
-    print "Accepting..."
+    print("Accepting...")
     conn = scn.accept()[0]
     sck.settimeout(5)
     conn.get_socket(True).settimeout(5)
@@ -70,26 +70,26 @@ def main():
     cnt = 0
     while True:
         cnt += 1
-        print "Listen invocation: %d" % cnt
+        print("Listen invocation: %d" % cnt)
         peer_address = scn.listen()
         assert not peer_address
-        print "Handshake invocation: %d" % cnt
+        print("Handshake invocation: %d" % cnt)
         try:
             conn.do_handshake()
         except SSLError as err:
             if err.errno == 504:
                 continue
             raise
-        print "Completed handshaking with peer"
+        print("Completed handshaking with peer")
         break
 
     cnt = 0
     while True:
         cnt += 1
-        print "Listen invocation: %d" % cnt
+        print("Listen invocation: %d" % cnt)
         peer_address = scn.listen()
         assert not peer_address
-        print "Read invocation: %d" % cnt
+        print("Read invocation: %d" % cnt)
         try:
             message = conn.read()
         except SSLError as err:
@@ -98,16 +98,16 @@ def main():
             if err.args[0] == SSL_ERROR_ZERO_RETURN:
                 break
             raise
-        print message
+        print(message)
         conn.write("Back to you: " + message)
 
     cnt = 0
     while True:
         cnt += 1
-        print "Listen invocation: %d" % cnt
+        print("Listen invocation: %d" % cnt)
         peer_address = scn.listen()
         assert not peer_address
-        print "Shutdown invocation: %d" % cnt
+        print("Shutdown invocation: %d" % cnt)
         try:
             s = conn.shutdown()
             s.shutdown(socket.SHUT_RDWR)

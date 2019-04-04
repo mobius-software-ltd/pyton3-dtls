@@ -32,7 +32,7 @@ elliptic curve cryptography and more fine-grained configuration options.
 To install from PyPI, on any supported platform enter:
 
 ```
-pip install python3-dtls
+pip install Dtls
 ```
 
 ## Design Goals
@@ -65,20 +65,27 @@ been built to be widely compatible with the following:
 
 ## Distributions
 
-PyDTLS requires version 1.1.0 or higher of the OpenSSL
+PyDTLS requires version 1.0.0 or higher of the OpenSSL
 library. Earlier versions are reported not to offer stable DTLS
 support. Since packaged distributions of this version of OpenSSL are
-available for many popular operating systems, OpenSSL-1.1.0 is an
+available for many popular operating systems, OpenSSL-1.0.0 is an
 installation requirement before PyDTLS functionality can be called.
+On Ubuntu 12.04 LTS, for example, the Python interpreter links with
+libcrypto.so.1.0.0 and libssl.so.1.0.0, and so use of PyDTLS requires
+no further installation steps.
 
 In comparison, installation of OpenSSL on Microsoft Windows operating
 systems is inconvenient. For this reason, source distributions of
 PyDTLS are available that include OpenSSL dll's for 32-bit and 64-bit
 Windows. All dll's have been linked with the Visual Studio 2008
 version of the Microsoft C runtime library, msvcr90.dll, the version
-used by CPython 3.5. Installation of Microsoft redistributable runtime
+used by CPython 2.7. Installation of Microsoft redistributable runtime
 packages should therefore not be required on machines with CPython
-3.5.
+2.7. The version of OpenSSL distributed with PyDTLS 0.1.0 is 1.0.1c.
+The version distributed with PyDTLS 1.2.0 is commit
+248cf959672041f38f4d80a4a09ee01d8ab04fe8 (branch OpenSSL_1_0_2-stable,
+1.0.2l-dev, containing a desirable fix to DTLSv1_listen not present
+in 1.0.2k, the stable version at the time of PyDTLS 1.2.0 release).
 
 The OpenSSL version used by PyDTLS can be determined from the values
 of *sslconnection's* DTLS_OPENSSL_VERSION_NUMBER,
@@ -268,12 +275,12 @@ Microsoft Windows it is not.
 ## Testing
 
 A simple echo server is available to be executed from the project root
-directory with `python3 -m dtls.test.echo_seq`. The echo server is
+directory with `python -m dtls.test.echo_seq`. The echo server is
 reachable using the code snippet at the top of this document, using port
 28000 at "localhost".
 
 Unit test suites can be executed from the project root directory with
-`python3 -m dtls.test.unit [-v]` and `python3 -m dtls.test.unit_wrapper`
+`python -m dtls.test.unit [-v]` and `python -m dtls.test.unit_wrapper`
 (for the client and server wrappers)
 
 Almost all of the Python standard library's *ssl* unit tests from the
@@ -323,3 +330,13 @@ The *dtls* package and its sub-packages log various occurrences,
 primarily events that can aid debugging. Especially *router* emits many
 messages when the logging level is set to at least *logging.DEBUG*.
 dtls/test/echo_seq.py activates this logging level during its operation.
+
+## Currently Supported Platforms
+
+At the time of initial release, PyDTLS 0.1.0 has been tested on Ubuntu
+12.04.1 LTS 32-bit and 64-bit, as well as Microsoft Windows 7 32-bit
+and 64-bit, using CPython 2.7.3. Patches with additional platform
+ports are welcome.
+
+As of release 1.2.0, PyDTLS is tested on Ubuntu 16.04 LTS as well as
+Microsoft Windows 10, using CPython 2.7.13.

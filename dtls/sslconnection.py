@@ -46,21 +46,20 @@ import socket
 import hmac
 import datetime
 from logging import getLogger
-from os import urandom
+from os import urandom, fsencode
 from select import select
 from weakref import proxy
 
-from err import openssl_error, InvalidSocketError
-from err import raise_ssl_error
-from err import SSL_ERROR_WANT_READ, SSL_ERROR_SYSCALL
-from err import ERR_WRONG_VERSION_NUMBER, ERR_COOKIE_MISMATCH, ERR_NO_SHARED_CIPHER
-from err import ERR_NO_CIPHER, ERR_HANDSHAKE_TIMEOUT, ERR_PORT_UNREACHABLE
-from err import ERR_READ_TIMEOUT, ERR_WRITE_TIMEOUT
-from err import ERR_BOTH_KEY_CERT_FILES, ERR_BOTH_KEY_CERT_FILES_SVR, ERR_NO_CERTS
-from x509 import _X509, decode_cert
-from tlock import tlock_init
-from openssl import *
-from util import _Rsrc, _BIO
+from .err import openssl_error, InvalidSocketError
+from .err import raise_ssl_error
+from .err import SSL_ERROR_WANT_READ, SSL_ERROR_SYSCALL
+from .err import ERR_WRONG_VERSION_NUMBER, ERR_COOKIE_MISMATCH, ERR_NO_SHARED_CIPHER
+from .err import ERR_NO_CIPHER, ERR_HANDSHAKE_TIMEOUT, ERR_PORT_UNREACHABLE
+from .err import ERR_READ_TIMEOUT, ERR_WRITE_TIMEOUT
+from .err import ERR_BOTH_KEY_CERT_FILES, ERR_BOTH_KEY_CERT_FILES_SVR, ERR_NO_CERTS
+from .x509 import _X509, decode_cert
+from .openssl import *
+from .util import _Rsrc, _BIO
 
 _logger = getLogger(__name__)
 
@@ -74,18 +73,8 @@ CERT_REQUIRED = 2
 #
 # One-time global OpenSSL library initialization
 #
-SSL_library_init()
-SSL_load_error_strings()
-tlock_init()
-DTLS_OPENSSL_VERSION_NUMBER = SSLeay()
-DTLS_OPENSSL_VERSION = SSLeay_version(SSLEAY_VERSION)
-DTLS_OPENSSL_VERSION_INFO = (
-    DTLS_OPENSSL_VERSION_NUMBER >> 28 & 0xFF,  # major
-    DTLS_OPENSSL_VERSION_NUMBER >> 20 & 0xFF,  # minor
-    DTLS_OPENSSL_VERSION_NUMBER >> 12 & 0xFF,  # fix
-    DTLS_OPENSSL_VERSION_NUMBER >> 4  & 0xFF,  # patch
-    DTLS_OPENSSL_VERSION_NUMBER       & 0xF)   # status
-
+OPENSSL_init_ssl(0)
+#SSL_load_error_strings()
 
 def _ssl_logging_cb(conn, where, return_code):
     _state = where & ~SSL_ST_MASK
@@ -149,7 +138,6 @@ class _CTX(_Rsrc):
         SSL_CTX_free(self._value)
         self._value = None
 
-
 class _SSL(_Rsrc):
     """SSL structure wrapper"""
     def __init__(self, value):
@@ -159,7 +147,6 @@ class _SSL(_Rsrc):
         _logger.debug("Freeing SSL: %d", self.raw)
         SSL_free(self._value)
         self._value = None
-
 
 class _CallbackProxy(object):
     """Callback gateway to an SSLConnection object
@@ -171,8 +158,8 @@ class _CallbackProxy(object):
     """
 
     def __init__(self, cbm):
-        self.ssl_connection = proxy(cbm.im_self)
-        self.ssl_func = cbm.im_func
+        self.ssl_connection = proxy(cbm.__self__)
+        self.ssl_func = cbm.__func__
 
     def __call__(self, *args, **kwargs):
         return self.ssl_func(self.ssl_connection, *args, **kwargs)
@@ -365,7 +352,8 @@ class SSLConnection(object):
             client_method = DTLSv1_2_client_method
         elif self._ssl_version == PROTOCOL_DTLSv1:
             client_method = DTLSv1_client_method
-        self._ctx = _CTX(SSL_CTX_new(client_method()))
+        ssl_context = SSL_CTX_new(client_method())
+        self._ctx = _CTX(ssl_context)
         self._intf_ssl_ctx = SSLContext(self._ctx.value)
         if self._cert_reqs == CERT_NONE:
             verify_mode = SSL_VERIFY_NONE
@@ -385,15 +373,15 @@ class SSLConnection(object):
         # corruption when packet loss occurs
         SSL_CTX_set_options(self._ctx.value, SSL_OP_NO_COMPRESSION)
         if self._certfile:
-            SSL_CTX_use_certificate_chain_file(self._ctx.value, self._certfile)
+            SSL_CTX_use_certificate_chain_file(self._ctx.value, fsencode(self._certfile))
         if self._keyfile:
-            SSL_CTX_use_PrivateKey_file(self._ctx.value, self._keyfile,
+            SSL_CTX_use_PrivateKey_file(self._ctx.value, fsencode(self._keyfile),
                                         SSL_FILE_TYPE_PEM)
         if self._ca_certs:
-            SSL_CTX_load_verify_locations(self._ctx.value, self._ca_certs, None)
+            SSL_CTX_load_verify_locations(self._ctx.value, fsencode(self._ca_certs), None)
         if self._ciphers:
             try:
-                SSL_CTX_set_cipher_list(self._ctx.value, self._ciphers)
+                SSL_CTX_set_cipher_list(self._ctx.value, self._ciphers.encode('ascii'))
             except openssl_error() as err:
                 raise_ssl_error(ERR_NO_CIPHER, err)
         if self._user_config_ssl_ctx:
@@ -522,8 +510,8 @@ class SSLConnection(object):
             raise_ssl_error(ERR_BOTH_KEY_CERT_FILES)
         if server_side and not keyfile:
             raise_ssl_error(ERR_BOTH_KEY_CERT_FILES_SVR)
-        if cert_reqs != CERT_NONE and not ca_certs:
-            raise_ssl_error(ERR_NO_CERTS)
+        #if cert_reqs != CERT_NONE and not ca_certs:
+        #    raise_ssl_error(ERR_NO_CERTS)
 
         if not ciphers:
             ciphers = "DEFAULT"
@@ -562,8 +550,7 @@ class SSLConnection(object):
         if self._user_config_ssl:
             self._user_config_ssl(self._intf_ssl)
 
-        if sys.platform.startswith('win') and \
-           not (SSL_get_options(self._ssl.value) & SSL_OP_NO_QUERY_MTU):
+        if sys.platform.startswith('win') and not (SSL_get_options(self._ssl.value) & SSL_OP_NO_QUERY_MTU):
             SSL_set_options(self._ssl.value, SSL_OP_NO_QUERY_MTU)
             DTLS_set_link_mtu(self._ssl.value, 576)
 
@@ -572,6 +559,7 @@ class SSLConnection(object):
         self._wbio.disown()
         if post_init:
             post_init()
+            
     def get_socket(self, inbound):
         """Retrieve a socket used by this connection
 

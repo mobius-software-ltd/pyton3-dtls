@@ -46,14 +46,20 @@ if __name__ == "__main__":
     dist = "bdist_wheel" in args.command and not args.help
     plat_dist = dist and args.plat_name
     if dist:
-        from pypandoc import convert
-        long_description = convert("README.md", "rst")\
-                           .translate({ord("\r"): None})
-        with open("README.rst", "wb") as readme:
-            readme.write(long_description)
+        try:
+            from pypandoc import convert
+            long_description = convert("README.md", "rst")\
+                               .translate({ord("\r"): None})
+            with open("README.rst", "wb") as readme:
+                readme.write(long_description)
+        except OSError:
+            # pandoc is not installed, fallback to using raw contents
+            long_description = open('README.md').read()
     else:
         long_description = open("README.rst").read()
+
     top_package_plat_files_file = "dtls_package_files"
+
     if dist:
         if plat_dist:
             prebuilt_platform_root = "dtls/prebuilt"
@@ -104,7 +110,7 @@ if __name__ == "__main__":
               'License :: OSI Approved :: Apache Software License',
               'Operating System :: POSIX :: Linux',
               'Operating System :: Microsoft :: Windows',
-              'Programming Language :: Python :: 2.7',
+              'Programming Language :: Python :: 3.5',
           ],
           long_description=long_description,
           packages=["dtls", "dtls.demux", "dtls.test"],

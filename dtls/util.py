@@ -53,7 +53,7 @@ class _BIO(_Rsrc):
     def __del__(self):
         if self.owned:
             _logger.debug("Freeing BIO: %d", self.raw)
-            from openssl import BIO_free
+            from .openssl import BIO_free
             BIO_free(self._value)
             self.owned = False
         self._value = None

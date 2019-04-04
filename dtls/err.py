@@ -58,7 +58,7 @@ ERR_TLSV1_ALERT_UNKNOWN_CA = 0x14102418
 
 def patch_ssl_errors():
     import ssl
-    errors = [i for i in globals().iteritems() if type(i[1]) == int and str(i[0]).startswith('ERR_')]
+    errors = [i for i in globals().items() if type(i[1]) == int and str(i[0]).startswith('ERR_')]
     for k, v in errors:
         if not hasattr(ssl, k):
             setattr(ssl, k, v)
