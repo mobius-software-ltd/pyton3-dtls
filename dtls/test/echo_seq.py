@@ -70,9 +70,9 @@ def main():
     cnt = 0
     while True:
         cnt += 1
-        print("Listen invocation: %d" % cnt)
-        peer_address = scn.listen()
-        assert not peer_address
+        # print("Listen invocation: %d" % cnt)
+        # peer_address = scn.listen()
+        # assert not peer_address
         print("Handshake invocation: %d" % cnt)
         try:
             conn.do_handshake()
@@ -86,9 +86,9 @@ def main():
     cnt = 0
     while True:
         cnt += 1
-        print("Listen invocation: %d" % cnt)
-        peer_address = scn.listen()
-        assert not peer_address
+        # print("Listen invocation: %d" % cnt)
+        # peer_address = scn.listen()
+        # assert not peer_address
         print("Read invocation: %d" % cnt)
         try:
             message = conn.read()
@@ -98,24 +98,29 @@ def main():
             if err.args[0] == SSL_ERROR_ZERO_RETURN:
                 break
             raise
-        print(message)
-        conn.write("Back to you: " + message)
+        print(message.decode())
+        conn.write(str("Back to you: " + message.decode()).encode())
 
     cnt = 0
     while True:
         cnt += 1
-        print("Listen invocation: %d" % cnt)
-        peer_address = scn.listen()
-        assert not peer_address
+        # print("Listen invocation: %d" % cnt)
+        # peer_address = scn.listen()
+        # assert not peer_address
         print("Shutdown invocation: %d" % cnt)
         try:
-            s = conn.shutdown()
-            s.shutdown(socket.SHUT_RDWR)
+            s = conn.unwrap()
+            s.close()
         except SSLError as err:
             if err.errno == 502:
                 continue
             raise
         break
+
+    sck.close()
+
+    pass
+
 
 if __name__ == "__main__":
     main()

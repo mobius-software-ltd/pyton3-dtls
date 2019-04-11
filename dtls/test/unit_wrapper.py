@@ -16,6 +16,7 @@ _logger = getLogger(__name__)
 
 import ssl
 from dtls.wrapper import DtlsSocket
+from dtls import err
 
 
 HOST = "localhost"
@@ -185,7 +186,7 @@ tests = [
           'client_sigalgs': None},
      'result':
          {'ret_success': False,
-          'error_code': ssl.ERR_WRONG_SSL_VERSION,
+          'error_code': 'wrong ssl version',
           'exception': None}},
     {'testcase':
         {'name': 'certificate verify fails',
@@ -208,7 +209,7 @@ tests = [
           'client_sigalgs': None},
      'result':
          {'ret_success': False,
-          'error_code': ssl.ERR_CERTIFICATE_VERIFY_FAILED,
+          'error_code': 'certificate verify failed',
           'exception': None}},
     {'testcase':
         {'name': 'no matching curve',
@@ -231,7 +232,7 @@ tests = [
           'client_sigalgs': None},
      'result':
          {'ret_success': False,
-          'error_code': ssl.ERR_SSL_HANDSHAKE_FAILURE,
+          'error_code': 'handshake failure',
           'exception': None}},
     {'testcase':
          {'name': 'matching curve',
@@ -277,7 +278,7 @@ tests = [
           'client_sigalgs': None},
      'result':
          {'ret_success': False,
-          'error_code': ssl.ERR_PORT_UNREACHABLE,
+          'error_code': err.ERR_WRITE_TIMEOUT,
           'exception': None}},
     {'testcase':
         {'name': 'no matching sigalgs',
@@ -300,7 +301,7 @@ tests = [
           'client_sigalgs': "RSA+SHA256"},
      'result':
          {'ret_success': False,
-          'error_code': ssl.ERR_SSL_HANDSHAKE_FAILURE,
+          'error_code': 'handshake failure',
           'exception': None}},
     {'testcase':
         {'name': 'matching sigalgs',
@@ -346,7 +347,7 @@ tests = [
           'client_sigalgs': None},
      'result':
          {'ret_success': False,
-          'error_code': ssl.ERR_SSL_HANDSHAKE_FAILURE,
+          'error_code': 'handshake failure',
           'exception': None}},
     {'testcase':
         {'name': 'matching cipher',
@@ -423,11 +424,12 @@ def params_test(start_server, certfile, protocol, certreqs, cacertsfile,
                        curves=client_curves,
                        sigalgs=client_sigalgs,
                        user_mtu=mtu)
+        s.settimeout(3.0)
         s.connect((HOST, server.port))
         if connectionchatty:
             sys.stdout.write(" client:  sending %s...\n" % (repr(indata)))
         s.write(indata)
-        outdata = s.read()
+        outdata = s.read().decode()
         if connectionchatty:
             sys.stdout.write(" client:  read %s\n" % repr(outdata))
         if outdata != indata.lower():
@@ -458,39 +460,43 @@ def params_test(start_server, certfile, protocol, certreqs, cacertsfile,
 
 
 class TestSequenceMeta(type):
-    def __new__(mcs, name, bases, dict):
 
-        def gen_test(_case, _input, _result):
-            def test(self):
-                try:
-                    if CHATTY or CHATTY_CLIENT:
-                        sys.stdout.write("\nTestcase: %s\n" % _case['name'])
-                    ret, e = params_test(_case['start_server'], chatty=CHATTY, connectionchatty=CHATTY_CLIENT, **_input)
-                    if _result['ret_success']:
-                        self.assertEqual(ret, _result['ret_success'])
-                    else:
+    @classmethod
+    def gen_test(mcs, _case, _input, _result):
+        def test(self):
+            try:
+                if CHATTY or CHATTY_CLIENT:
+                    sys.stdout.write("\nTestcase: %s\n" % _case['name'])
+                ret, e = params_test(_case['start_server'], chatty=CHATTY, connectionchatty=CHATTY_CLIENT, **_input)
+                if _result['ret_success']:
+                    self.assertEqual(ret, _result['ret_success'])
+                else:
+                    try:
+                        last_error = e.errqueue[-1][1].decode()
+                    except:
                         try:
-                            last_error = e.errqueue[-1][0]
+                            last_error = e.errno
                         except:
-                            try:
-                                last_error = e.errno
-                            except:
-                                last_error = None
+                            last_error = None
+                    if isinstance(last_error, str):
+                        self.assertRegex(last_error, _result['error_code'])
+                    else:
                         self.assertEqual(last_error, _result['error_code'])
-                except Exception as e:
-                    raise
-            return test
+            except Exception as e:
+                raise
 
+        return test
+
+    def __new__(mcs, name, bases, attrs):
         for testcase in tests:
-            _case, _input, _result = testcase.itervalues()
+            _case, _input, _result = testcase.values()
             test_name = "test_%s" % _case['name'].lower().replace(' ', '_')
-            dict[test_name] = gen_test(_case, _input, _result)
+            attrs[test_name] = mcs.gen_test(_case, _input, _result)
 
-        return type.__new__(mcs, name, bases, dict)
+        return super(TestSequenceMeta, mcs).__new__(mcs, name, bases, attrs)
 
 
-class WrapperTests(unittest.TestCase):
-    __metaclass__ = TestSequenceMeta
+class WrapperTests(unittest.TestCase, metaclass=TestSequenceMeta):
 
     def test_build_cert_chain(self):
         steps = [ssl.SSL_BUILD_CHAIN_FLAG_NONE, ssl.SSL_BUILD_CHAIN_FLAG_NO_ROOT]
@@ -531,7 +537,7 @@ class WrapperTests(unittest.TestCase):
                 if connectionchatty:
                     sys.stdout.write(" client:  sending %s...\n" % (repr(indata)))
                 s.write(indata)
-                outdata = s.read()
+                outdata = s.read().decode()
                 if connectionchatty:
                     sys.stdout.write(" client:  read %s\n" % repr(outdata))
                 if outdata != indata.lower():
@@ -584,9 +590,9 @@ class WrapperTests(unittest.TestCase):
 
         if chatty or connectionchatty:
             sys.stdout.write("\nTestcase: test_ecdh_curve\n")
-        for step, tmp in steps.iteritems():
+        for step, tmp in steps.items():
             if chatty or connectionchatty:
-                sys.stdout.write("\n Subcase: %s\n" % step)
+                sys.stdout.write("\n Subcase: %s -> should %s\n" % (step, 'succeed' if tmp[2] else 'FAIL'))
             server_curve, client_curve, result = tmp
             server = ThreadedEchoServer(certificate=CERTFILE_EC,
                                         ssl_version=ssl.PROTOCOL_DTLSv1_2,
@@ -618,7 +624,7 @@ class WrapperTests(unittest.TestCase):
                 if connectionchatty:
                     sys.stdout.write(" client:  sending %s...\n" % (repr(indata)))
                 s.write(indata)
-                outdata = s.read()
+                outdata = s.read().decode()
                 if connectionchatty:
                     sys.stdout.write(" client:  read %s\n" % repr(outdata))
                 if outdata != indata.lower():

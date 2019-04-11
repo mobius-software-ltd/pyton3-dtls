@@ -66,6 +66,6 @@ class _EC_KEY(_Rsrc):
 
     def __del__(self):
         _logger.debug("Freeing EC_KEY: %d", self.raw)
-        from openssl import EC_KEY_free
+        from .openssl import EC_KEY_free
         EC_KEY_free(self._value)
         self._value = None

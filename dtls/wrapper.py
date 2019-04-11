@@ -125,9 +125,10 @@ class DtlsSocket(object):
         self._client_timeout = client_timeout
 
         # Default socket creation
-        _sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         if isinstance(sock, socket.socket):
             _sock = sock
+        else:
+            _sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
         self._sock = ssl.wrap_socket(_sock,
                                      keyfile=keyfile,
@@ -187,10 +188,11 @@ class DtlsSocket(object):
                 cli.close()
         else:
             try:
-                self._sock.unwrap()
+                conn = self._sock.unwrap()
             except:
-                pass
-        self._sock.close()
+                self._sock.close()
+            else:
+                conn.close()
 
     def recvfrom(self, bufsize, flags=0):
         if self._server_side:
@@ -272,7 +274,7 @@ class DtlsSocket(object):
             return self._sendto_from_client_side(buf, address)
 
     def _sendto_from_server_side(self, buf, address):
-        for conn, client in self._clients.iteritems():
+        for conn, client in self._clients.items():
             if client.getAddr() == address:
                 return self._clientWrite(conn, buf)
         return 0
@@ -383,10 +385,11 @@ class DtlsSocket(object):
             if conn in self._clients:
                 del self._clients[conn]
             try:
-                conn.unwrap()
+                _conn = conn.unwrap()
             except:
-                pass
-            conn.close()
+                conn.close()
+            else:
+                _conn.close()
 
         except Exception as e:
             pass
