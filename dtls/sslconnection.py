@@ -312,16 +312,18 @@ class SSLConnection(object):
 
         self._wbio = _BIO(BIO_new_dgram(self._sock.fileno(), BIO_NOCLOSE))
         if peer_address:
-            # Connect directly to this client peer, bypassing the demux
+            # We are connected directly to a client peer, bypassing the demux
             rsock = self._sock
             BIO_dgram_set_connected(self._wbio.value, peer_address)
         else:
+            # We are starting an UDP listening socket
             from .demux import UDPDemux
             self._udp_demux = UDPDemux(self._sock)
             rsock = self._udp_demux.get_connection(None)
         if rsock is self._sock:
             self._rbio = self._wbio
         else:
+            _logger.debug("!!! _init_server where rsock != self._sock !!!")
             self._rsock = rsock
             self._rbio = _BIO(BIO_new_dgram(self._rsock.fileno(), BIO_NOCLOSE))
         server_method = DTLS_server_method
@@ -523,8 +525,8 @@ class SSLConnection(object):
             raise_ssl_error(ERR_BOTH_KEY_CERT_FILES)
         if server_side and not keyfile:
             raise_ssl_error(ERR_BOTH_KEY_CERT_FILES_SVR)
-        #if cert_reqs != CERT_NONE and not ca_certs:
-        #    raise_ssl_error(ERR_NO_CERTS)
+        # if cert_reqs != CERT_NONE and not ca_certs:
+        #     raise_ssl_error(ERR_NO_CERTS)
 
         if not ciphers:
             ciphers = "DEFAULT"
@@ -552,7 +554,7 @@ class SSLConnection(object):
         elif isinstance(sock, _UnwrappedSocket):
             post_init = self._reconnect_unwrapped()
         else:
-            # Standard OS socket? Is it connected to a peer? Make it an SSLConnection
+            # Standard OS socket? Is it connected to a peer?
             try:
                 peer_address = sock.getpeername()
             except socket.error:
@@ -796,7 +798,7 @@ class SSLConnection(object):
     def shutdown(self):
         """Shut down the DTLS connection
 
-        This method attemps to complete a bidirectional shutdown between
+        This method attempts to complete a bidirectional shutdown between
         peers. For non-blocking sockets, it should be called repeatedly until
         it no longer raises continuation request exceptions.
         """
@@ -805,10 +807,11 @@ class SSLConnection(object):
             # Listening server-side sockets cannot be shut down
             return
 
-        _logger.debug("Initiating shutdown...")
         try:
+            _logger.debug("Starting shutdown %s", "server-side" if self._server_side else "client-side")
             self._wrap_socket_library_call(
                 lambda: SSL_shutdown(self._ssl.value), ERR_READ_TIMEOUT)
+            _logger.debug("...completed shutdown %s", "server-side" if self._server_side else "client-side")
         except openssl_error() as err:
             if err.result == 0:
                 # close-notify alert was just sent; wait for same from peer
@@ -816,11 +819,16 @@ class SSLConnection(object):
                 # with SSL_set_read_ahead here, doing so causes a shutdown
                 # failure (ret: -1, SSL_ERROR_SYSCALL) on the DTLS shutdown
                 # initiator side. And test_starttls does pass.
+                _logger.debug("Initiated shutdown %s...", "server-side" if self._server_side else "client-side")
                 self._wrap_socket_library_call(
                     lambda: SSL_shutdown(self._ssl.value), ERR_READ_TIMEOUT)
+                _logger.debug("...completed shutdown %s", "server-side" if self._server_side else "client-side")
             else:
                 raise
-        _logger.debug("...completed shutdown")
+        if self._server_side:
+            SSL_set_accept_state(self._ssl.value)
+        else:
+            SSL_set_connect_state(self._ssl.value)
         if hasattr(self, "_rsock"):
             # Return wrapped connected server socket (non-listening)
             return _UnwrappedSocket(self._sock, self._rsock, self._udp_demux,
@@ -933,7 +941,8 @@ class SSLConnection(object):
     def unwrap(self):
         try:
             s = self.shutdown()
-        except:
+        except Exception as e:
+            _logger.exception(e)
             s = self._sock
         return s
 

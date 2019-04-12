@@ -30,7 +30,7 @@ Classes:
 """
 
 import select
-
+import time
 from logging import getLogger
 
 import ssl
@@ -46,13 +46,14 @@ _logger = getLogger(__name__)
 def wrap_client(sock, keyfile=None, certfile=None,
                 cert_reqs=ssl.CERT_NONE, ssl_version=ssl.PROTOCOL_DTLSv1_2, ca_certs=None,
                 do_handshake_on_connect=True, suppress_ragged_eofs=True,
-                ciphers=None, curves=None, sigalgs=None, user_mtu=None):
+                ciphers=None, curves=None, sigalgs=None, user_mtu=None,
+                client_cert_options=ssl.SSL_BUILD_CHAIN_FLAG_NONE):
 
     return DtlsSocket(sock=sock, keyfile=keyfile, certfile=certfile, server_side=False,
                       cert_reqs=cert_reqs, ssl_version=ssl_version, ca_certs=ca_certs,
                       do_handshake_on_connect=do_handshake_on_connect, suppress_ragged_eofs=suppress_ragged_eofs,
                       ciphers=ciphers, curves=curves, sigalgs=sigalgs, user_mtu=user_mtu,
-                      server_key_exchange_curve=None, server_cert_options=ssl.SSL_BUILD_CHAIN_FLAG_NONE)
+                      server_key_exchange_curve=None, server_cert_options=client_cert_options)
 
 
 def wrap_server(sock, keyfile=None, certfile=None,
@@ -92,7 +93,6 @@ class DtlsSocket(object):
             else:
                 return (time.time() - self.last_update) > self.timeout
 
-
     def __init__(self,
                  sock=None,
                  keyfile=None,
@@ -114,7 +114,7 @@ class DtlsSocket(object):
         if server_cert_options is None:
             server_cert_options = ssl.SSL_BUILD_CHAIN_FLAG_NONE
 
-        self._ssl_logging = False
+        self._ssl_logging = True
         self._server_side = server_side
         self._ciphers = ciphers
         self._curves = curves
@@ -164,8 +164,8 @@ class DtlsSocket(object):
             _ctx.set_curves(self._curves)
         if self._sigalgs:
             _ctx.set_sigalgs(self._sigalgs)
+        _ctx.build_cert_chain(flags=self._server_cert_options)
         if self._server_side:
-            _ctx.build_cert_chain(flags=self._server_cert_options)
             _ctx.set_ecdh_curve(curve_name=self._server_key_exchange_curve)
 
     def user_config_ssl(self, _ssl):
@@ -379,6 +379,14 @@ class DtlsSocket(object):
         try:
             if error:
                 _logger.debug('Drop client %s ... with error: %s' % (self._clients[conn].getAddr(), error))
+                if error and hasattr(error, 'errqueue') and len(error.errqueue):
+                    if 'verify failed' in error.errqueue[-1][1].decode():
+                        try:
+                            _logger.debug('cert: %s', conn.getpeercert())
+                            _logger.debug('chain: %s', conn.getpeercertchain())
+                        except:
+                            pass
+
             else:
                 _logger.debug('Drop client %s' % str(self._clients[conn].getAddr()))
 

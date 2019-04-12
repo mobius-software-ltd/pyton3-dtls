@@ -7,12 +7,11 @@ from dtls import do_patch
 do_patch()
 
 cert_path = path.join(path.abspath(path.dirname(__file__)), "certs")
-s = socket(AF_INET, SOCK_DGRAM)
-ss = ssl.wrap_socket(s, cert_reqs=ssl.CERT_NONE, ca_certs=path.join(cert_path, "ca-cert.pem"))
-ss.connect(('127.0.0.1', 28000))
-ss.send('Hi there'.encode())
-print(ss.recv().decode())
-s = ss.unwrap()
+s = ssl.wrap_socket(socket(AF_INET, SOCK_DGRAM), cert_reqs=ssl.CERT_NONE, ca_certs=path.join(cert_path, "ca-cert.pem"))
+s.connect(('127.0.0.1', 28000))
+s.send('Hi there'.encode())
+print(s.recv().decode())
+s = s.unwrap()
 s.close()
 
 pass

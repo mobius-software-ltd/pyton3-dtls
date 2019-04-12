@@ -50,7 +50,7 @@ from .err import raise_as_ssl_module_error, patch_ssl_errors
 
 def do_patch():
     import ssl as _ssl  # import to be avoided if ssl module is never patched
-    global _orig_SSLSocket_init, _orig_get_server_certificate, _orig_SSLSocket_close, _orig_SSLSocket_settimeout
+    global _orig_SSLSocket_init, _orig_get_server_certificate, _orig_SSLSocket_close, _orig_SSLSocket_settimeout, _orig_SSLSocket___del__
     global ssl
     ssl = _ssl
     if hasattr(ssl, "PROTOCOL_DTLSv1"):
@@ -76,10 +76,12 @@ def do_patch():
     _orig_get_server_certificate = ssl.get_server_certificate
     _orig_SSLSocket_close = ssl.SSLSocket.close
     _orig_SSLSocket_settimeout = ssl.SSLSocket.settimeout
+    _orig_SSLSocket___del__ = ssl.SSLSocket.__del__
     ssl.SSLSocket.__init__ = _SSLSocket_init
     ssl.get_server_certificate = _get_server_certificate
     ssl.SSLSocket.close = _SSLSocket_close
     ssl.SSLSocket.settimeout = _SSLSocket_settimeout
+    ssl.SSLSocket.__del__ = _SSLSocket___del__
     patch_ssl_errors()
     raise_as_ssl_module_error()
 
@@ -328,6 +330,10 @@ def _SSLSocket_settimeout(self, timeout):
     except:
         pass
     return _orig_SSLSocket_settimeout(self, timeout)
+
+
+def _SSLSocket___del__(self):
+    _orig_SSLSocket___del__(self)
 
 
 if __name__ == "__main__":
