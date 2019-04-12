@@ -379,14 +379,6 @@ class DtlsSocket(object):
         try:
             if error:
                 _logger.debug('Drop client %s ... with error: %s' % (self._clients[conn].getAddr(), error))
-                if error and hasattr(error, 'errqueue') and len(error.errqueue):
-                    if 'verify failed' in error.errqueue[-1][1].decode():
-                        try:
-                            _logger.debug('cert: %s', conn.getpeercert())
-                            _logger.debug('chain: %s', conn.getpeercertchain())
-                        except:
-                            pass
-
             else:
                 _logger.debug('Drop client %s' % str(self._clients[conn].getAddr()))
 
