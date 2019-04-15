@@ -398,6 +398,11 @@ class SSLConnection(object):
             SSL_CTX_use_PrivateKey_file(self._ctx.value, fsencode(self._keyfile), SSL_FILE_TYPE_PEM)
         if self._ca_certs:
             SSL_CTX_load_verify_locations(self._ctx.value, fsencode(self._ca_certs), None)
+            if self._server_side:
+                cert_names = SSL_load_client_CA_file(fsencode(self._ca_certs))
+                if cert_names:
+                    _logger.debug("Adding certificate names to allowed CA list on server.")
+                    SSL_CTX_set_client_CA_list(self._ctx.value, cert_names)
         if self._ciphers:
             try:
                 SSL_CTX_set_cipher_list(self._ctx.value, self._ciphers.encode('ascii'))
