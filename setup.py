@@ -52,7 +52,7 @@ if __name__ == "__main__":
                                .translate({ord("\r"): None})
             with open("README.rst", "wb") as readme:
                 readme.write(long_description)
-        except OSError:
+        except ModuleNotFoundError:
             # pandoc is not installed, fallback to using raw contents
             long_description = open('README.md').read()
     else:
