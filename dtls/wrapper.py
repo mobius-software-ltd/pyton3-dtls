@@ -47,26 +47,30 @@ def wrap_client(sock, keyfile=None, certfile=None,
                 cert_reqs=ssl.CERT_NONE, ssl_version=ssl.PROTOCOL_DTLSv1_2, ca_certs=None,
                 do_handshake_on_connect=True, suppress_ragged_eofs=True,
                 ciphers=None, curves=None, sigalgs=None, user_mtu=None,
-                client_cert_options=ssl.SSL_BUILD_CHAIN_FLAG_NONE):
+                client_cert_options=ssl.SSL_BUILD_CHAIN_FLAG_NONE,
+                ssl_logging=False):
 
     return DtlsSocket(sock=sock, keyfile=keyfile, certfile=certfile, server_side=False,
                       cert_reqs=cert_reqs, ssl_version=ssl_version, ca_certs=ca_certs,
                       do_handshake_on_connect=do_handshake_on_connect, suppress_ragged_eofs=suppress_ragged_eofs,
                       ciphers=ciphers, curves=curves, sigalgs=sigalgs, user_mtu=user_mtu,
-                      server_key_exchange_curve=None, server_cert_options=client_cert_options)
+                      server_key_exchange_curve=None, server_cert_options=client_cert_options,
+                      ssl_logging=ssl_logging)
 
 
 def wrap_server(sock, keyfile=None, certfile=None,
                 cert_reqs=ssl.CERT_NONE, ssl_version=ssl.PROTOCOL_DTLS, ca_certs=None,
                 do_handshake_on_connect=False, suppress_ragged_eofs=True,
                 ciphers=None, curves=None, sigalgs=None, user_mtu=None,
-                server_key_exchange_curve=None, server_cert_options=ssl.SSL_BUILD_CHAIN_FLAG_NONE):
+                server_key_exchange_curve=None, server_cert_options=ssl.SSL_BUILD_CHAIN_FLAG_NONE,
+                ssl_logging=False, client_timeout=None):
 
     return DtlsSocket(sock=sock, keyfile=keyfile, certfile=certfile, server_side=True,
                       cert_reqs=cert_reqs, ssl_version=ssl_version, ca_certs=ca_certs,
                       do_handshake_on_connect=do_handshake_on_connect, suppress_ragged_eofs=suppress_ragged_eofs,
                       ciphers=ciphers, curves=curves, sigalgs=sigalgs, user_mtu=user_mtu,
-                      server_key_exchange_curve=server_key_exchange_curve, server_cert_options=server_cert_options)
+                      server_key_exchange_curve=server_key_exchange_curve, server_cert_options=server_cert_options,
+                      ssl_logging=ssl_logging, client_timeout=client_timeout)
 
 
 class DtlsSocket(object):
@@ -84,37 +88,40 @@ class DtlsSocket(object):
             return self.host, self.port
 
         def updateTimestamp(self):
-            if self.timeout != None:
+            if self.timeout is not None:
                 self.last_update = time.time()
 
         def expired(self):
-            if self.timeout == None:
+            if self.timeout is None:
                 return False
             else:
                 return (time.time() - self.last_update) > self.timeout
 
-    def __init__(self,
-                 sock=None,
-                 keyfile=None,
-                 certfile=None,
-                 server_side=False,
-                 cert_reqs=ssl.CERT_NONE,
-                 ssl_version=ssl.PROTOCOL_DTLSv1_2,
-                 ca_certs=None,
-                 do_handshake_on_connect=False,
-                 suppress_ragged_eofs=True,
-                 ciphers=None,
-                 curves=None,
-                 sigalgs=None,
-                 user_mtu=None,
-                 server_key_exchange_curve=None,
-                 server_cert_options=ssl.SSL_BUILD_CHAIN_FLAG_NONE,
-                 client_timeout=None):
+    def __init__(
+            self,
+            sock=None,
+            keyfile=None,
+            certfile=None,
+            server_side=False,
+            cert_reqs=ssl.CERT_NONE,
+            ssl_version=ssl.PROTOCOL_DTLSv1_2,
+            ca_certs=None,
+            do_handshake_on_connect=False,
+            suppress_ragged_eofs=True,
+            ciphers=None,
+            curves=None,
+            sigalgs=None,
+            user_mtu=None,
+            server_key_exchange_curve=None,
+            server_cert_options=ssl.SSL_BUILD_CHAIN_FLAG_NONE,
+            ssl_logging=False,
+            client_timeout=None,
+    ):
 
         if server_cert_options is None:
             server_cert_options = ssl.SSL_BUILD_CHAIN_FLAG_NONE
 
-        self._ssl_logging = True
+        self._ssl_logging = ssl_logging
         self._server_side = server_side
         self._ciphers = ciphers
         self._curves = curves
@@ -240,7 +247,7 @@ class DtlsSocket(object):
                     ret = conn.handle_timeout()
                     _logger.debug('Retransmission triggered for %s: %d' % (str(self._clients[conn].getAddr()), ret))
 
-                if self._clients[conn].expired() == True:
+                if self._clients[conn].expired():
                     _logger.debug('Found expired session')
                     self._clientDrop(conn)
 
@@ -320,7 +327,7 @@ class DtlsSocket(object):
                 if client in self._clients:
                     _logger.debug('Client already connected %s' % str(client))
                     raise ValueError
-                self._clients[client] = self._ClientSession(host=host, port=port)
+                self._clients[client] = self._ClientSession(host=host, port=port, timeout=self._client_timeout)
 
                 self._clientDoHandshake(client)
 
@@ -363,8 +370,6 @@ class DtlsSocket(object):
 
         try:
             _data = data
-            if False:
-                _data = data.raw
             ret = conn.send(_data)
             _logger.debug('To client %s ... bytes sent %s' % (str(self._clients[conn].getAddr()), str(ret)))
 

@@ -86,6 +86,7 @@ DTLS_OPENSSL_VERSION_INFO = (
     DTLS_OPENSSL_VERSION_NUMBER >> 4  & 0xFF,  # patch
     DTLS_OPENSSL_VERSION_NUMBER       & 0xF)   # status
 
+
 def _ssl_logging_cb(conn, where, return_code):
     _state = where & ~SSL_ST_MASK
     state = "SSL"
@@ -284,16 +285,20 @@ class SSL(object):
 
     def set_mtu(self, mtu=None):
         if mtu:
+            _logger.debug("set mtu to: %d", mtu)
             SSL_set_options(self._ssl, SSL_OP_NO_QUERY_MTU)
             SSL_set_mtu(self._ssl, mtu)
         else:
+            _logger.debug("set mtu to query mode")
             SSL_clear_options(self._ssl, SSL_OP_NO_QUERY_MTU)
 
     def set_link_mtu(self, mtu=None):
         if mtu:
+            _logger.debug("set DTLS mtu to: %d", mtu)
             SSL_set_options(self._ssl, SSL_OP_NO_QUERY_MTU)
             DTLS_set_link_mtu(self._ssl, mtu)
         else:
+            _logger.debug("set mtu to query mode")
             SSL_clear_options(self._ssl, SSL_OP_NO_QUERY_MTU)
 
 
@@ -568,9 +573,9 @@ class SSLConnection(object):
             else:
                 post_init = self._init_client(peer_address)
 
-        if sys.platform.startswith('win') and not (SSL_get_options(self._ssl.value) & SSL_OP_NO_QUERY_MTU):
+        if False:  # sys.platform.startswith('win') and not (SSL_get_options(self._ssl.value) & SSL_OP_NO_QUERY_MTU):
             SSL_set_options(self._ssl.value, SSL_OP_NO_QUERY_MTU)
-            DTLS_set_link_mtu(self._ssl.value, 576)
+            DTLS_set_link_mtu(self._ssl.value, 1350)
 
         SSL_set_bio(self._ssl.value, self._rbio.value, self._wbio.value)
         self._rbio.disown()
