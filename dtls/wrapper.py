@@ -175,6 +175,11 @@ class DtlsSocket(object):
         if self._server_side:
             _ctx.set_ecdh_curve(curve_name=self._server_key_exchange_curve)
 
+    def _dtls_timer_cb(self, ssl, timer_us):
+        timer_us = 5*1000*1000
+        _logger.debug("DTLS timer callback ... %d [us]", timer_us)
+        return timer_us
+
     def user_config_ssl(self, _ssl):
         """
 
@@ -182,6 +187,8 @@ class DtlsSocket(object):
         """
         if self._user_mtu:
             _ssl.set_link_mtu(self._user_mtu)
+
+        _ssl.DTLS_set_timer_cb(self._dtls_timer_cb)
 
     def settimeout(self, t):
         if self._server_side:

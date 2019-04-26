@@ -285,21 +285,25 @@ class SSL(object):
 
     def set_mtu(self, mtu=None):
         if mtu:
-            _logger.debug("set mtu to: %d", mtu)
+            _logger.debug("set mtu to: %d for ssl: %d", mtu, self._ssl.raw)
             SSL_set_options(self._ssl, SSL_OP_NO_QUERY_MTU)
             SSL_set_mtu(self._ssl, mtu)
         else:
-            _logger.debug("set mtu to query mode")
+            _logger.debug("set mtu to query mode for ssl: %d", self._ssl.raw)
             SSL_clear_options(self._ssl, SSL_OP_NO_QUERY_MTU)
 
     def set_link_mtu(self, mtu=None):
         if mtu:
-            _logger.debug("set DTLS mtu to: %d", mtu)
+            _logger.debug("set DTLS mtu to: %d for ssl: %d", mtu, self._ssl.raw)
             SSL_set_options(self._ssl, SSL_OP_NO_QUERY_MTU)
             DTLS_set_link_mtu(self._ssl, mtu)
         else:
-            _logger.debug("set mtu to query mode")
+            _logger.debug("set mtu to query mode for ssl: %d", self._ssl.raw)
             SSL_clear_options(self._ssl, SSL_OP_NO_QUERY_MTU)
+
+    def DTLS_set_timer_cb(self, cb):
+        _logger.debug("set timer callback to: %s for ssl: %d", repr(cb), self._ssl.raw)
+        DTLS_set_timer_cb(self._ssl, _CallbackProxy(cb))
 
 
 class SSLConnection(object):
@@ -310,6 +314,30 @@ class SSLConnection(object):
     """
 
     _rnd_key = urandom(16)
+
+    def _config_ssl_ctx(self, verify_mode):
+        SSL_CTX_set_verify(self._ctx.value, verify_mode)
+        SSL_CTX_set_read_ahead(self._ctx.value, 1)
+        # Compression occurs at the stream layer now, leading to datagram
+        # corruption when packet loss occurs
+        SSL_CTX_set_options(self._ctx.value, SSL_OP_NO_COMPRESSION)
+        if self._certfile:
+            SSL_CTX_use_certificate_chain_file(self._ctx.value, fsencode(self._certfile))
+        if self._keyfile:
+            SSL_CTX_use_PrivateKey_file(self._ctx.value, fsencode(self._keyfile), SSL_FILE_TYPE_PEM)
+        if self._ca_certs:
+            SSL_CTX_load_verify_locations(self._ctx.value, fsencode(self._ca_certs), None)
+            # if self._server_side:
+            #     cert_names = SSL_load_client_CA_file(fsencode(self._ca_certs))
+            #     if cert_names:
+            #         SSL_CTX_set_client_CA_list(self._ctx.value, cert_names)
+        if self._ciphers:
+            try:
+                SSL_CTX_set_cipher_list(self._ctx.value, self._ciphers.encode('ascii'))
+            except openssl_error() as err:
+                raise_ssl_error(ERR_NO_CIPHER, err)
+        if self._user_config_ssl_ctx:
+            self._user_config_ssl_ctx(self._intf_ssl_ctx)
 
     def _init_server(self, peer_address):
         if (self._sock.type & socket.SOCK_DGRAM) != socket.SOCK_DGRAM:
@@ -391,30 +419,6 @@ class SSLConnection(object):
         if peer_address:
             return lambda: self.connect(peer_address)
 
-    def _config_ssl_ctx(self, verify_mode):
-        SSL_CTX_set_verify(self._ctx.value, verify_mode)
-        SSL_CTX_set_read_ahead(self._ctx.value, 1)
-        # Compression occurs at the stream layer now, leading to datagram
-        # corruption when packet loss occurs
-        SSL_CTX_set_options(self._ctx.value, SSL_OP_NO_COMPRESSION)
-        if self._certfile:
-            SSL_CTX_use_certificate_chain_file(self._ctx.value, fsencode(self._certfile))
-        if self._keyfile:
-            SSL_CTX_use_PrivateKey_file(self._ctx.value, fsencode(self._keyfile), SSL_FILE_TYPE_PEM)
-        if self._ca_certs:
-            SSL_CTX_load_verify_locations(self._ctx.value, fsencode(self._ca_certs), None)
-            # if self._server_side:
-            #     cert_names = SSL_load_client_CA_file(fsencode(self._ca_certs))
-            #     if cert_names:
-            #         SSL_CTX_set_client_CA_list(self._ctx.value, cert_names)
-        if self._ciphers:
-            try:
-                SSL_CTX_set_cipher_list(self._ctx.value, self._ciphers.encode('ascii'))
-            except openssl_error() as err:
-                raise_ssl_error(ERR_NO_CIPHER, err)
-        if self._user_config_ssl_ctx:
-            self._user_config_ssl_ctx(self._intf_ssl_ctx)
-
     def _copy_server(self):
         source = self._sock
         self._udp_demux = source._udp_demux
@@ -442,7 +446,7 @@ class SSLConnection(object):
         source._intf_ssl = SSL(source._ssl.value)
         SSL_set_accept_state(source._ssl.value)
         if self._user_config_ssl:
-            self._user_config_ssl(source._intf_ssl)
+            self._user_config_ssl(self._intf_ssl)  # Why is this not source._intf_ssl? If it is, then the mtu size is not set correctly!?
         source._rbio = new_source_rbio
         source._wbio = new_source_wbio
         SSL_set_bio(source._ssl.value, new_source_rbio.value, new_source_wbio.value)

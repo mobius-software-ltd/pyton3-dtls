@@ -616,7 +616,7 @@ __all__ = [
     # Methods
     "DTLSv1_get_timeout", "DTLSv1_handle_timeout",
     "DTLSv1_listen",
-    "DTLS_set_link_mtu",
+    "DTLS_set_link_mtu", "DTLS_set_timer_cb",
     "BIO_gets", "BIO_read", "BIO_get_mem_data",
     "BIO_dgram_set_connected",
     "BIO_dgram_get_peer", "BIO_dgram_set_peer",
@@ -674,6 +674,8 @@ list(map(lambda x: _make_function(*x), (
      ((DTLS_Method, "ret"),)),
     ("DTLSv1_listen", libssl,
      ((c_int, "ret"), (SSL, "ssl"), (POINTER(sockaddr_u), "bio_addr")), False, errcheck_gte_zero),
+    ("DTLS_set_timer_cb", libssl,
+     ((None, "ret"), (SSL, "ssl"), (c_void_p, "cb")), False),
     ("SSL_CTX_new", libssl,
      ((SSLCTX, "ret"), (DTLS_Method, "meth"))),
     ("SSL_CTX_free", libssl,
@@ -1004,6 +1006,22 @@ def DTLSv1_listen(ssl):
 
 def DTLS_set_link_mtu(ssl, mtu):
     return _SSL_ctrl(ssl, DTLS_CTRL_SET_LINK_MTU, mtu, None)
+
+_ruint_voidp_uint = CFUNCTYPE(c_uint, c_void_p, c_uint)
+
+_timer_callbacks = dict()
+
+def DTLS_set_timer_cb(ssl, cb):
+    def py_dtls_timer_cb(_ssl, timer_us):
+        try:
+            timer_us = cb(SSL(_ssl), timer_us)
+        except:
+            return 0
+        return timer_us
+
+    global _timer_callbacks
+    _timer_callbacks[ssl] = _ruint_voidp_uint(py_dtls_timer_cb)
+    _DTLS_set_timer_cb(ssl, _timer_callbacks[ssl])
 
 def SSL_read(ssl, length, buffer):
     if buffer:
