@@ -48,14 +48,14 @@ def wrap_client(sock, keyfile=None, certfile=None,
                 do_handshake_on_connect=True, suppress_ragged_eofs=True,
                 ciphers=None, curves=None, sigalgs=None, user_mtu=None,
                 client_cert_options=ssl.SSL_BUILD_CHAIN_FLAG_NONE,
-                ssl_logging=False):
+                ssl_logging=False, handshake_timeout=None):
 
     return DtlsSocket(sock=sock, keyfile=keyfile, certfile=certfile, server_side=False,
                       cert_reqs=cert_reqs, ssl_version=ssl_version, ca_certs=ca_certs,
                       do_handshake_on_connect=do_handshake_on_connect, suppress_ragged_eofs=suppress_ragged_eofs,
                       ciphers=ciphers, curves=curves, sigalgs=sigalgs, user_mtu=user_mtu,
                       server_key_exchange_curve=None, server_cert_options=client_cert_options,
-                      ssl_logging=ssl_logging)
+                      ssl_logging=ssl_logging, handshake_timeout=handshake_timeout)
 
 
 def wrap_server(sock, keyfile=None, certfile=None,
@@ -63,14 +63,14 @@ def wrap_server(sock, keyfile=None, certfile=None,
                 do_handshake_on_connect=False, suppress_ragged_eofs=True,
                 ciphers=None, curves=None, sigalgs=None, user_mtu=None,
                 server_key_exchange_curve=None, server_cert_options=ssl.SSL_BUILD_CHAIN_FLAG_NONE,
-                ssl_logging=False, client_timeout=None):
+                ssl_logging=False, client_timeout=None, handshake_timeout=None):
 
     return DtlsSocket(sock=sock, keyfile=keyfile, certfile=certfile, server_side=True,
                       cert_reqs=cert_reqs, ssl_version=ssl_version, ca_certs=ca_certs,
                       do_handshake_on_connect=do_handshake_on_connect, suppress_ragged_eofs=suppress_ragged_eofs,
                       ciphers=ciphers, curves=curves, sigalgs=sigalgs, user_mtu=user_mtu,
                       server_key_exchange_curve=server_key_exchange_curve, server_cert_options=server_cert_options,
-                      ssl_logging=ssl_logging, client_timeout=client_timeout)
+                      ssl_logging=ssl_logging, client_timeout=client_timeout, handshake_timeout=handshake_timeout)
 
 
 class DtlsSocket(object):
@@ -116,6 +116,7 @@ class DtlsSocket(object):
             server_cert_options=ssl.SSL_BUILD_CHAIN_FLAG_NONE,
             ssl_logging=False,
             client_timeout=None,
+            handshake_timeout=None,
     ):
 
         if server_cert_options is None:
@@ -130,6 +131,7 @@ class DtlsSocket(object):
         self._server_key_exchange_curve = server_key_exchange_curve
         self._server_cert_options = server_cert_options
         self._client_timeout = client_timeout
+        self._handshake_timeout = handshake_timeout
 
         # Default socket creation
         if isinstance(sock, socket.socket):
@@ -176,7 +178,9 @@ class DtlsSocket(object):
             _ctx.set_ecdh_curve(curve_name=self._server_key_exchange_curve)
 
     def _dtls_timer_cb(self, ssl, timer_us):
-        timer_us = 5*1000*1000
+        timer_us = 1000000  # Standard value from OpenSSL 1.1.1b
+        if self._handshake_timeout:
+            timer_us = int(self._handshake_timeout*1000*1000)
         _logger.debug("DTLS timer callback ... %d [us]", timer_us)
         return timer_us
 
