@@ -31,6 +31,7 @@ Classes:
 
 import select
 import time
+import collections
 from logging import getLogger
 
 import ssl
@@ -63,14 +64,16 @@ def wrap_server(sock, keyfile=None, certfile=None,
                 do_handshake_on_connect=False, suppress_ragged_eofs=True,
                 ciphers=None, curves=None, sigalgs=None, user_mtu=None,
                 server_key_exchange_curve=None, server_cert_options=ssl.SSL_BUILD_CHAIN_FLAG_NONE,
-                ssl_logging=False, client_timeout=None, handshake_timeout=None):
+                ssl_logging=False, client_timeout=None, handshake_timeout=None,
+                cb_ignore_ssl_exception_in_handshake=None):
 
     return DtlsSocket(sock=sock, keyfile=keyfile, certfile=certfile, server_side=True,
                       cert_reqs=cert_reqs, ssl_version=ssl_version, ca_certs=ca_certs,
                       do_handshake_on_connect=do_handshake_on_connect, suppress_ragged_eofs=suppress_ragged_eofs,
                       ciphers=ciphers, curves=curves, sigalgs=sigalgs, user_mtu=user_mtu,
                       server_key_exchange_curve=server_key_exchange_curve, server_cert_options=server_cert_options,
-                      ssl_logging=ssl_logging, client_timeout=client_timeout, handshake_timeout=handshake_timeout)
+                      ssl_logging=ssl_logging, client_timeout=client_timeout, handshake_timeout=handshake_timeout,
+                      cb_ignore_ssl_exception_in_handshake=cb_ignore_ssl_exception_in_handshake)
 
 
 class DtlsSocket(object):
@@ -117,6 +120,7 @@ class DtlsSocket(object):
             ssl_logging=False,
             client_timeout=None,
             handshake_timeout=None,
+            cb_ignore_ssl_exception_in_handshake=None,
     ):
 
         if server_cert_options is None:
@@ -132,6 +136,7 @@ class DtlsSocket(object):
         self._server_cert_options = server_cert_options
         self._client_timeout = client_timeout
         self._handshake_timeout = handshake_timeout
+        self._cb_ignore_ssl_exception_in_handshake = cb_ignore_ssl_exception_in_handshake
 
         # Default socket creation
         if isinstance(sock, socket.socket):
@@ -222,6 +227,13 @@ class DtlsSocket(object):
         try:
             r, _, _ = select.select(self._getAllReadingSockets(), [], [], self._timeout)
 
+        except OSError as ose:
+            import errno
+            if ose.errno == errno.EBADF:
+                # Connection closed? Do nothing ...
+                pass
+            else:
+                raise
         except socket.timeout:
             # __Nothing__ received from any client
             pass
@@ -357,6 +369,10 @@ class DtlsSocket(object):
                 pass
             else:
                 self._clientDrop(conn, error=e)
+                if self.cb_ignore_ssl_exception_in_handshake is not None \
+                   and isinstance(self.cb_ignore_ssl_exception_in_handshake, collections.Callable) \
+                   and self.cb_ignore_ssl_exception_in_handshake(e):
+                    pass
                 raise e
 
     def _clientRead(self, conn, bufsize=4096):
