@@ -417,11 +417,13 @@ class DtlsSocket(object):
             if conn in self._clients:
                 del self._clients[conn]
             try:
-                _conn = conn.unwrap()
+                _conn = conn
+                if conn.handshake_done:
+                    _conn = conn.unwrap()
             except:
                 conn.close()
             else:
                 _conn.close()
 
-        except Exception as e:
+        except:
             pass
