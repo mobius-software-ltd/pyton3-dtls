@@ -413,17 +413,20 @@ class DtlsSocket(object):
                 _logger.debug('Drop client %s ... with error: %s' % (self._clients[conn].getAddr(), error))
             else:
                 _logger.debug('Drop client %s' % str(self._clients[conn].getAddr()))
-
+            handshake_done = False
             if conn in self._clients:
+                handshake_done = self._clients[conn]
                 del self._clients[conn]
             try:
                 _conn = conn
-                if conn.handshake_done:
+                if handshake_done:
                     _conn = conn.unwrap()
-            except:
+            except Exception as e:
+                _logger.warn('Error in unwrap: %s', e)
                 conn.close()
             else:
                 _conn.close()
 
-        except:
+        except Exception as e:
+            _logger.warn('Error in clientDrop: %s', e)
             pass

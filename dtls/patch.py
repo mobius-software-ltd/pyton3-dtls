@@ -283,6 +283,8 @@ def _SSLSocket_accept(self):
 def _SSLSocket_real_connect(self, addr, return_errno):
     if self._connected:
         raise ValueError("attempt to connect already-connected SSLSocket!")
+    if self._sslobj:
+        raise RuntimeError("Overwriting SSLConnection?")
     self._sslobj = SSLConnection(socket(**_sockclone_kwargs(self)),
                                  self.keyfile, self.certfile, False,
                                  self.cert_reqs, self.ssl_version,
@@ -334,6 +336,10 @@ def _SSLSocket_settimeout(self, timeout):
 
 def _SSLSocket___del__(self):
     _orig_SSLSocket___del__(self)
+    try:
+        del self._sslobj
+    except:
+        pass
 
 
 if __name__ == "__main__":

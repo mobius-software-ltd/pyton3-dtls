@@ -403,8 +403,7 @@ class SSLConnection(object):
             client_method = DTLSv1_2_client_method
         elif self._ssl_version == PROTOCOL_DTLSv1:
             client_method = DTLSv1_client_method
-        ssl_context = SSL_CTX_new(client_method())
-        self._ctx = _CTX(ssl_context)
+        self._ctx = _CTX(SSL_CTX_new(client_method()))
         self._intf_ssl_ctx = SSLContext(self._ctx.value)
         if self._cert_reqs == CERT_NONE:
             verify_mode = SSL_VERIFY_NONE
@@ -588,12 +587,16 @@ class SSLConnection(object):
             post_init()
 
     def __del__(self):
-        if hasattr(self, '_ssl'):
-            del self._ssl
-        if hasattr(self, '_ctx'):
-            del self._ctx
         self._sock.detach()
         del self._sock
+        remove_from_timer_callbacks(self._ssl.value)
+        remove_from_info_callback(self._ctx.value)
+        if hasattr(self, '_ssl'):
+            del self._intf_ssl
+            del self._ssl
+        if hasattr(self, '_ctx'):
+            del self._intf_ssl_ctx
+            del self._ctx
 
     def get_socket(self, inbound):
         """Retrieve a socket used by this connection

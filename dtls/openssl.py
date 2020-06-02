@@ -653,6 +653,7 @@ __all__ = [
     "SSL_set_split_send_fragment",
     "SSL_CTX_set_max_pipelines",
     "SSL_set_max_pipelines",
+    "remove_from_info_callback", "remove_from_timer_callbacks"
 ]  # note: the following map adds to this list
 
 list(map(lambda x: _make_function(*x), (
@@ -900,6 +901,11 @@ def SSL_CTX_set_info_callback(ctx, app_info_cb):
     _info_callback[ctx] = _rvoid_voidp_int_int(py_info_callback)
     _SSL_CTX_set_info_callback(ctx, _info_callback[ctx])
 
+def remove_from_info_callback(ctx):
+    global _info_callback
+    if ctx in _info_callback:
+        _info_callback.pop(ctx)
+
 def SSL_CTX_set_max_send_fragment(ctx, m):
     return _SSL_CTX_ctrl(ctx,SSL_CTRL_SET_MAX_SEND_FRAGMENT,m, None)
 
@@ -1022,6 +1028,11 @@ def DTLS_set_timer_cb(ssl, cb):
     global _timer_callbacks
     _timer_callbacks[ssl] = _ruint_voidp_uint(py_dtls_timer_cb)
     _DTLS_set_timer_cb(ssl, _timer_callbacks[ssl])
+
+def remove_from_timer_callbacks(ssl):
+    global _timer_callbacks
+    if ssl in _timer_callbacks:
+        _timer_callbacks.pop(ssl)
 
 def SSL_read(ssl, length, buffer):
     if buffer:

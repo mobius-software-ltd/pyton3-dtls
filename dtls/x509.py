@@ -40,6 +40,7 @@ _logger = getLogger(__name__)
 class _X509(_Rsrc):
     """Wrapper for the cryptographic library's X509 resource"""
     def __init__(self, value):
+        _logger.debug("Allocating X509: %d", value.raw)
         super(_X509, self).__init__(value)
 
     def __del__(self):
@@ -51,6 +52,7 @@ class _X509(_Rsrc):
 class _STACK(_Rsrc):
     """Wrapper for the cryptographic library's stacks"""
     def __init__(self, value):
+        _logger.debug("Allocating STACK: %d", value.raw)
         super(_STACK, self).__init__(value)
 
     def __del__(self):

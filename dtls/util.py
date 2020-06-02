@@ -44,6 +44,7 @@ class _Rsrc(object):
 class _BIO(_Rsrc):
     """BIO wrapper"""
     def __init__(self, value):
+        _logger.debug("Allocating BIO: %d", value.raw)
         super(_BIO, self).__init__(value)
         self.owned = True
 
@@ -62,6 +63,7 @@ class _BIO(_Rsrc):
 class _EC_KEY(_Rsrc):
     """EC KEY wrapper"""
     def __init__(self, value):
+        _logger.debug("Allocating EC_KEY: %d", value.raw)
         super(_EC_KEY, self).__init__(value)
 
     def __del__(self):
