@@ -49,6 +49,7 @@ from ctypes import c_short, c_ushort, c_ubyte, c_char
 from ctypes import byref, POINTER, addressof
 from ctypes import Structure, Union
 from ctypes import create_string_buffer, sizeof, memmove, cast
+from threading import Lock
 
 #
 # Module initialization
@@ -882,6 +883,7 @@ def SSL_CTX_set1_curves_list(ctx, s):
 _rvoid_voidp_int_int = CFUNCTYPE(None, c_void_p, c_int, c_int)
 
 _info_callback = dict()
+_info_callback_lock = Lock()
 
 def SSL_CTX_set_info_callback(ctx, app_info_cb):
     """
@@ -897,14 +899,19 @@ def SSL_CTX_set_info_callback(ctx, app_info_cb):
             pass
         return
 
+    _info_callback_lock.acquire()
     global _info_callback
     _info_callback[ctx] = _rvoid_voidp_int_int(py_info_callback)
     _SSL_CTX_set_info_callback(ctx, _info_callback[ctx])
+    _info_callback_lock.release()
 
 def remove_from_info_callback(ctx):
+    _info_callback_lock.acquire()
     global _info_callback
     if ctx in _info_callback:
+        _SSL_CTX_set_info_callback(ctx, None)
         _info_callback.pop(ctx)
+    _info_callback_lock.release()
 
 def SSL_CTX_set_max_send_fragment(ctx, m):
     return _SSL_CTX_ctrl(ctx,SSL_CTRL_SET_MAX_SEND_FRAGMENT,m, None)
@@ -1016,6 +1023,7 @@ def DTLS_set_link_mtu(ssl, mtu):
 _ruint_voidp_uint = CFUNCTYPE(c_uint, c_void_p, c_uint)
 
 _timer_callbacks = dict()
+_timer_callbacks_lock = Lock()
 
 def DTLS_set_timer_cb(ssl, cb):
     def py_dtls_timer_cb(_ssl, timer_us):
@@ -1025,14 +1033,19 @@ def DTLS_set_timer_cb(ssl, cb):
             return 0
         return timer_us
 
+    _timer_callbacks_lock.acquire()
     global _timer_callbacks
     _timer_callbacks[ssl] = _ruint_voidp_uint(py_dtls_timer_cb)
     _DTLS_set_timer_cb(ssl, _timer_callbacks[ssl])
+    _timer_callbacks_lock.release()
 
 def remove_from_timer_callbacks(ssl):
+    _timer_callbacks_lock.acquire()
     global _timer_callbacks
     if ssl in _timer_callbacks:
+        _DTLS_set_timer_cb(ssl, None)
         _timer_callbacks.pop(ssl)
+    _timer_callbacks_lock.release()
 
 def SSL_read(ssl, length, buffer):
     if buffer:
