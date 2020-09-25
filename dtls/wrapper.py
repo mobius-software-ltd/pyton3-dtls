@@ -65,7 +65,8 @@ def wrap_server(sock, keyfile=None, certfile=None,
                 ciphers=None, curves=None, sigalgs=None, user_mtu=None,
                 server_key_exchange_curve=None, server_cert_options=ssl.SSL_BUILD_CHAIN_FLAG_NONE,
                 ssl_logging=False, client_timeout=None, handshake_timeout=None,
-                cb_ignore_ssl_exception_in_handshake=None):
+                cb_ignore_ssl_exception_in_handshake=None, cb_ignore_ssl_exception_read=None,
+                cb_ignore_ssl_exception_write=None):
 
     return DtlsSocket(sock=sock, keyfile=keyfile, certfile=certfile, server_side=True,
                       cert_reqs=cert_reqs, ssl_version=ssl_version, ca_certs=ca_certs,
@@ -73,7 +74,9 @@ def wrap_server(sock, keyfile=None, certfile=None,
                       ciphers=ciphers, curves=curves, sigalgs=sigalgs, user_mtu=user_mtu,
                       server_key_exchange_curve=server_key_exchange_curve, server_cert_options=server_cert_options,
                       ssl_logging=ssl_logging, client_timeout=client_timeout, handshake_timeout=handshake_timeout,
-                      cb_ignore_ssl_exception_in_handshake=cb_ignore_ssl_exception_in_handshake)
+                      cb_ignore_ssl_exception_in_handshake=cb_ignore_ssl_exception_in_handshake,
+                      cb_ignore_ssl_exception_read=cb_ignore_ssl_exception_read,
+                      cb_ignore_ssl_exception_write=cb_ignore_ssl_exception_write)
 
 
 class DtlsSocket(object):
@@ -121,6 +124,8 @@ class DtlsSocket(object):
             client_timeout=None,
             handshake_timeout=None,
             cb_ignore_ssl_exception_in_handshake=None,
+            cb_ignore_ssl_exception_read=None,
+            cb_ignore_ssl_exception_write=None,
     ):
 
         if server_cert_options is None:
@@ -137,6 +142,8 @@ class DtlsSocket(object):
         self._client_timeout = client_timeout
         self._handshake_timeout = handshake_timeout
         self._cb_ignore_ssl_exception_in_handshake = cb_ignore_ssl_exception_in_handshake
+        self._cb_ignore_ssl_exception_read = cb_ignore_ssl_exception_read
+        self._cb_ignore_ssl_exception_write = cb_ignore_ssl_exception_write
 
         # Default socket creation
         if isinstance(sock, socket.socket):
@@ -239,8 +246,8 @@ class DtlsSocket(object):
             pass
 
         else:
-            try:
-                for conn in r:
+            for conn in r:
+                try:
                     _last_peer = conn.getpeername() if conn._connected else None
                     if self._sockIsServerSock(conn):
                         # Connect
@@ -259,9 +266,15 @@ class DtlsSocket(object):
                                 else:
                                     _logger.debug('Received data from an already disconnected client!')
 
-            except Exception as e:
-                setattr(e, 'peer', _last_peer)
-                raise e
+                except Exception as e:
+                    _logger.warning('Exception for connection %s raised' % repr(_last_peer))
+                    setattr(e, 'peer', _last_peer)
+                    if self._cb_ignore_ssl_exception_read is not None \
+                      and isinstance(self._cb_ignore_ssl_exception_read, collections.Callable) \
+                      and self._cb_ignore_ssl_exception_read(e):
+                        self._clientDrop(conn, e)
+                        continue
+                    raise e
 
         try:
             for conn in self._getClientReadingSockets():
@@ -306,7 +319,15 @@ class DtlsSocket(object):
     def _sendto_from_server_side(self, buf, address):
         for conn, client in self._clients.items():
             if client.getAddr() == address:
-                return self._clientWrite(conn, buf)
+                try:
+                    return self._clientWrite(conn, buf)
+                except Exception as e:
+                    if self._cb_ignore_ssl_exception_write is not None \
+                            and isinstance(self._cb_ignore_ssl_exception_write, collections.Callable) \
+                            and self._cb_ignore_ssl_exception_write(e):
+                        self._clientDrop(conn, e)
+                        continue
+                    raise e
         return 0
 
     def _sendto_from_client_side(self, buf, address):
@@ -369,10 +390,10 @@ class DtlsSocket(object):
                 pass
             else:
                 self._clientDrop(conn, error=e)
-                if self.cb_ignore_ssl_exception_in_handshake is not None \
-                   and isinstance(self.cb_ignore_ssl_exception_in_handshake, collections.Callable) \
-                   and self.cb_ignore_ssl_exception_in_handshake(e):
-                    pass
+                if self._cb_ignore_ssl_exception_in_handshake is not None \
+                   and isinstance(self._cb_ignore_ssl_exception_in_handshake, collections.Callable) \
+                   and self._cb_ignore_ssl_exception_in_handshake(e):
+                    return
                 raise e
 
     def _clientRead(self, conn, bufsize=4096):
@@ -422,11 +443,11 @@ class DtlsSocket(object):
                 if handshake_done:
                     _conn = conn.unwrap()
             except Exception as e:
-                _logger.warn('Error in unwrap: %s', e)
+                _logger.warning('Error in unwrap: %s', e)
                 conn.close()
             else:
                 _conn.close()
 
         except Exception as e:
-            _logger.warn('Error in clientDrop: %s', e)
+            _logger.warning('Error in clientDrop: %s', e)
             pass
