@@ -430,7 +430,9 @@ class DtlsSocket(object):
         _logger.debug('$' * 60)
 
         try:
-            if error:
+            if conn not in self._clients:
+                _logger.debug('Drop client %s not yet connected?!' % repr(conn))
+            elif error:
                 _logger.debug('Drop client %s ... with error: %s' % (self._clients[conn].getAddr(), error))
             else:
                 _logger.debug('Drop client %s' % str(self._clients[conn].getAddr()))
