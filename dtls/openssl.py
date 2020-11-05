@@ -38,7 +38,7 @@ import socket
 from logging import getLogger
 from os import path
 from datetime import timedelta
-from .err import openssl_error
+from .err import openssl_error, SSL_ERROR_TEXT
 from .err import SSL_ERROR_NONE
 from .util import _EC_KEY, _BIO
 import ctypes
@@ -49,6 +49,7 @@ from ctypes import c_short, c_ushort, c_ubyte, c_char
 from ctypes import byref, POINTER, addressof
 from ctypes import Structure, Union
 from ctypes import create_string_buffer, sizeof, memmove, cast
+from threading import Lock
 
 #
 # Module initialization
@@ -60,8 +61,8 @@ _logger = getLogger(__name__)
 #
 if sys.platform.startswith('win'):
     dll_path = path.abspath(path.dirname(__file__))
-    cryptodll_path = path.join(dll_path, "libcrypto.dll")
-    ssldll_path = path.join(dll_path, "libssl.dll")
+    cryptodll_path = path.join(dll_path, "libcrypto-1_1-x64.dll")
+    ssldll_path = path.join(dll_path, "libssl-1_1-x64.dll")
     libcrypto = CDLL(cryptodll_path)
     libssl = CDLL(ssldll_path)
 else:
@@ -438,18 +439,18 @@ if not py_inet_pton:
 def inet_ntop(address_family, packed_ip):
     if py_inet_ntop:
         return py_inet_ntop(address_family,
-                            array.array('I', packed_ip).tostring())
+                            array.array('I', packed_ip))
     if wsa_inet_ntop:
         string_buf = create_string_buffer(47)
         wsa_inet_ntop(address_family, packed_ip,
                       string_buf, sizeof(string_buf))
         if not string_buf.value:
             raise ValueError("wsa_inet_ntop failed with: %s" %
-                             array.array('I', packed_ip).tostring())
+                             array.array('I', packed_ip))
         return string_buf.value
     if address_family == socket.AF_INET6:
         raise ValueError("Platform does not support IPv6")
-    return socket.inet_ntoa(array.array('I', packed_ip).tostring())
+    return socket.inet_ntoa(array.array('I', packed_ip))
 
 def inet_pton(address_family, string_ip):
     if address_family == socket.AF_INET6:
@@ -509,15 +510,21 @@ def raise_ssl_error(result, func, args, ssl):
         buf = create_string_buffer(512)
         _ERR_error_string_n(err, buf, sizeof(buf))
         errqueue.append((err, buf.value))
-    _logger.debug("SSL error raised: ssl_error: %d, result: %d, " +
+    ssl_error_text = SSL_ERROR_TEXT[ssl_error] if ssl_error in SSL_ERROR_TEXT else 'unknown'
+    _logger.debug("SSL error raised: ssl_error: %d (%s), result: %d, " +
                   "errqueue: %s, func_name: %s",
-                  ssl_error, result, errqueue, func.func_name)
+                  ssl_error, ssl_error_text, result, errqueue, func.func_name)
     raise openssl_error()(ssl_error, errqueue, result, func, args)
 
 def find_ssl_arg(args):
     for arg in args:
         if isinstance(arg, SSL):
             return arg
+
+def errcheck_gte_zero(result, func, args):
+    if result < 0:
+        raise_ssl_error(result, func, args, find_ssl_arg(args))
+    return args
 
 def errcheck_ord(result, func, args):
     if result <= 0:
@@ -610,7 +617,7 @@ __all__ = [
     # Methods
     "DTLSv1_get_timeout", "DTLSv1_handle_timeout",
     "DTLSv1_listen",
-    "DTLS_set_link_mtu",
+    "DTLS_set_link_mtu", "DTLS_set_timer_cb",
     "BIO_gets", "BIO_read", "BIO_get_mem_data",
     "BIO_dgram_set_connected",
     "BIO_dgram_get_peer", "BIO_dgram_set_peer",
@@ -636,7 +643,7 @@ __all__ = [
     "SSL_CTX_set_cookie_cb",
     "OBJ_obj2txt", "decode_ASN1_STRING", "ASN1_TIME_print",
     "OBJ_nid2sn",
-    "X509_get_notAfter",
+    "X509_get_notBefore", "X509_get_notAfter",
     "ASN1_item_d2i", "GENERAL_NAME_print",
     "OPENSSL_sk_value",
     "i2d_X509",
@@ -647,14 +654,16 @@ __all__ = [
     "SSL_set_split_send_fragment",
     "SSL_CTX_set_max_pipelines",
     "SSL_set_max_pipelines",
+    "remove_from_info_callback", "remove_from_timer_callbacks"
 ]  # note: the following map adds to this list
 
 list(map(lambda x: _make_function(*x), (
     ("OPENSSL_init_ssl", libssl,
-     #((c_int, "ret"),)),
-     ((c_int, "ret"), (c_uint64, "opts"),)),
-     ("OpenSSL_version", libcrypto,
-      ((c_char_p, "ret"), (c_int, "t"))),
+     ((c_int, "ret"), (c_uint64, "opts"), (c_void_p, "settings"))),
+    ("OpenSSL_version", libcrypto,
+     ((c_char_p, "ret"), (c_int, "t"))),
+    ("OpenSSL_version_num", libcrypto,
+     ((c_int, "ret"),)),
     ("DTLS_server_method", libssl,
      ((DTLS_Method, "ret"),)),
     ("DTLSv1_server_method", libssl,
@@ -665,6 +674,10 @@ list(map(lambda x: _make_function(*x), (
      ((DTLS_Method, "ret"),)),
     ("DTLSv1_2_client_method", libssl,
      ((DTLS_Method, "ret"),)),
+    ("DTLSv1_listen", libssl,
+     ((c_int, "ret"), (SSL, "ssl"), (POINTER(sockaddr_u), "bio_addr")), False, errcheck_gte_zero),
+    ("DTLS_set_timer_cb", libssl,
+     ((None, "ret"), (SSL, "ssl"), (c_void_p, "cb")), False),
     ("SSL_CTX_new", libssl,
      ((SSLCTX, "ret"), (DTLS_Method, "meth"))),
     ("SSL_CTX_free", libssl,
@@ -723,6 +736,8 @@ list(map(lambda x: _make_function(*x), (
      ((c_int, "ret"), (SSLCTX, "ctx"), (c_char_p, "file"), (c_int, "type"))),
     ("SSL_CTX_load_verify_locations", libssl,
      ((c_int, "ret"), (SSLCTX, "ctx"), (c_char_p, "CAfile"), (c_char_p, "CApath"))),
+    ("SSL_CTX_set_client_CA_list", libssl,
+     ((None, "ret"), (SSLCTX, "ctx"), (STACK_OF_X509, "list"))),
     ("SSL_CTX_set_verify", libssl,
      ((None, "ret"), (SSLCTX, "ctx"), (c_int, "mode"), (c_void_p, "verify_callback", 1, None))),
     ("SSL_accept", libssl,
@@ -739,6 +754,8 @@ list(map(lambda x: _make_function(*x), (
      ((X509, "ret"), (SSL, "ssl"))),
     ("SSL_get_peer_cert_chain", libssl,
      ((STACK_OF_X509, "ret"), (SSL, "ssl")), False),
+    ("SSL_load_client_CA_file", libssl,
+     ((STACK_OF_X509, "ret"), (c_char_p, "CAfile"))),
     ("SSL_read", libssl,
      ((c_int, "ret"), (SSL, "ssl"), (c_void_p, "buf"), (c_int, "num")), False),
     ("SSL_write", libssl,
@@ -749,6 +766,8 @@ list(map(lambda x: _make_function(*x), (
      ((c_int, "ret"), (SSL, "ssl"))),
     ("SSL_set_read_ahead", libssl,
      ((None, "ret"), (SSL, "ssl"), (c_int, "yes"))),
+    ("SSL_get_rbio", libssl,
+     ((BIO, "ret"), (SSL, "ssl"))),
     ("X509_free", libcrypto,
      ((None, "ret"), (X509, "a"))),
     ("PEM_read_bio_X509_AUX", libcrypto,
@@ -772,6 +791,10 @@ list(map(lambda x: _make_function(*x), (
      ((ASN1_STRING, "ret"), (POINTER(X509_NAME_ENTRY), "ne"))),
     ("X509_get_subject_name", libcrypto,
      ((POINTER(X509_name_st), "ret"), (X509, "a")), True, errcheck_p),
+    ("X509_get0_notBefore", libcrypto,
+     ((ASN1_TIME, "ret"), (X509, "a")), False, errcheck_p),
+    ("X509_get0_notAfter", libcrypto,
+     ((ASN1_TIME, "ret"), (X509, "a")), False, errcheck_p),
     ("ASN1_TIME_print", libcrypto,
      ((c_int, "ret"), (BIO, "fp"), (ASN1_TIME, "a")), False),
     ("X509_get_ext_by_NID", libcrypto,
@@ -860,6 +883,7 @@ def SSL_CTX_set1_curves_list(ctx, s):
 _rvoid_voidp_int_int = CFUNCTYPE(None, c_void_p, c_int, c_int)
 
 _info_callback = dict()
+_info_callback_lock = Lock()
 
 def SSL_CTX_set_info_callback(ctx, app_info_cb):
     """
@@ -875,9 +899,19 @@ def SSL_CTX_set_info_callback(ctx, app_info_cb):
             pass
         return
 
+    _info_callback_lock.acquire()
     global _info_callback
     _info_callback[ctx] = _rvoid_voidp_int_int(py_info_callback)
     _SSL_CTX_set_info_callback(ctx, _info_callback[ctx])
+    _info_callback_lock.release()
+
+def remove_from_info_callback(ctx):
+    _info_callback_lock.acquire()
+    global _info_callback
+    if ctx in _info_callback:
+        _SSL_CTX_set_info_callback(ctx, None)
+        _info_callback.pop(ctx)
+    _info_callback_lock.release()
 
 def SSL_CTX_set_max_send_fragment(ctx, m):
     return _SSL_CTX_ctrl(ctx,SSL_CTRL_SET_MAX_SEND_FRAGMENT,m, None)
@@ -908,8 +942,7 @@ def SSL_CTX_set_tmp_ecdh(ctx, ec_key):
     _ec_key_p = cast(ec_key.raw, c_void_p)
     return _SSL_CTX_ctrl(ctx, SSL_CTRL_SET_TMP_ECDH, 0, _ec_key_p)
 
-_rint_voidp_ubytep_uintp = CFUNCTYPE(c_int, c_void_p, POINTER(c_ubyte),
-                                     POINTER(c_uint))
+_rint_voidp_ubytep_uintp = CFUNCTYPE(c_int, c_void_p, POINTER(c_ubyte), POINTER(c_uint))
 _rint_voidp_ubytep_uint = CFUNCTYPE(c_int, c_void_p, POINTER(c_ubyte), c_uint)
 
 def SSL_CTX_set_cookie_cb(ctx, generate, verify):
@@ -927,7 +960,7 @@ def SSL_CTX_set_cookie_cb(ctx, generate, verify):
     def py_verify_cookie_cb(ssl, cookie, cookie_len):
         _logger.debug("Verifying cookie: %s", cookie[:cookie_len])
         try:
-            verify(SSL(ssl), ''.join([chr(i) for i in cookie[:cookie_len]]))
+            verify(SSL(ssl), bytes(cookie[:cookie_len]))
         except:
             _logger.debug("Cookie verification failed")
             return 0
@@ -979,12 +1012,40 @@ def DTLSv1_handle_timeout(ssl):
 
 def DTLSv1_listen(ssl):
     su = sockaddr_u()
-    ret = _SSL_ctrl(ssl, DTLS_CTRL_LISTEN, 0, byref(su))
-    errcheck_ord(ret, _SSL_ctrl, (ssl, DTLS_CTRL_LISTEN, 0, byref(su)))
-    return addr_tuple_from_sockaddr_u(su)
+    ret = _DTLSv1_listen(ssl, su)
+    if ret:
+        return addr_tuple_from_sockaddr_u(su)
+    return None
 
 def DTLS_set_link_mtu(ssl, mtu):
     return _SSL_ctrl(ssl, DTLS_CTRL_SET_LINK_MTU, mtu, None)
+
+_ruint_voidp_uint = CFUNCTYPE(c_uint, c_void_p, c_uint)
+
+_timer_callbacks = dict()
+_timer_callbacks_lock = Lock()
+
+def DTLS_set_timer_cb(ssl, cb):
+    def py_dtls_timer_cb(_ssl, timer_us):
+        try:
+            timer_us = cb(SSL(_ssl), timer_us)
+        except:
+            return 0
+        return timer_us
+
+    _timer_callbacks_lock.acquire()
+    global _timer_callbacks
+    _timer_callbacks[ssl] = _ruint_voidp_uint(py_dtls_timer_cb)
+    _DTLS_set_timer_cb(ssl, _timer_callbacks[ssl])
+    _timer_callbacks_lock.release()
+
+def remove_from_timer_callbacks(ssl):
+    _timer_callbacks_lock.acquire()
+    global _timer_callbacks
+    if ssl in _timer_callbacks:
+        _DTLS_set_timer_cb(ssl, None)
+        _timer_callbacks.pop(ssl)
+    _timer_callbacks_lock.release()
 
 def SSL_read(ssl, length, buffer):
     if buffer:
@@ -998,6 +1059,14 @@ def SSL_read(ssl, length, buffer):
     return buf.raw[:res_len]
 
 def SSL_write(ssl, data):
+    if isinstance(data, str):
+        data = data.encode()
+    elif isinstance(data, bytearray):
+        data = bytes(data)
+    elif hasattr(data, "tobytes") and callable(data.tobytes):
+        data = data.tobytes()
+    elif isinstance(data, ctypes.Array):
+        data = data.raw
     return _SSL_write(ssl, data, len(data))
 
 def SSL_set_options(ssl, op):
@@ -1076,7 +1145,7 @@ def SSL_alert_desc_string_long(value):
 def OBJ_obj2txt(asn1_object, no_name):
     buf = create_string_buffer(X509_NAME_MAXLEN)
     res_len = _OBJ_obj2txt(buf, sizeof(buf), asn1_object, 1 if no_name else 0)
-    return buf.raw[:res_len]
+    return buf.raw[:res_len].decode()
 
 def OBJ_nid2sn(nid):
     _name = _OBJ_nid2sn(nid)
@@ -1086,15 +1155,16 @@ def decode_ASN1_STRING(asn1_string):
     utf8_buf_ptr = POINTER(c_ubyte)()
     res_len = _ASN1_STRING_to_UTF8(byref(utf8_buf_ptr), asn1_string)
     try:
-        return unicode(''.join([chr(i) for i in utf8_buf_ptr[:res_len]]),
-                       'utf-8')
+        return bytes(utf8_buf_ptr[:res_len]).decode()
     finally:
         CRYPTO_free(utf8_buf_ptr)
 
+def X509_get_notBefore(x509):
+    notBefore = _X509_get0_notBefore(x509)
+    return ASN1_TIME(notBefore)
+
 def X509_get_notAfter(x509):
-    x509_raw = X509.from_param(x509)
-    x509_ptr = cast(x509_raw, POINTER(X509_st))
-    notAfter = x509_ptr.contents.cert_info.contents.validity.contents.notAfter
+    notAfter = _X509_get0_notAfter(x509)
     return ASN1_TIME(notAfter)
 
 def BIO_gets(bio):
@@ -1110,7 +1180,7 @@ def BIO_read(bio, length):
 def BIO_get_mem_data(bio):
     buf = POINTER(c_ubyte)()
     res_len = _BIO_ctrl(bio, BIO_CTRL_INFO, 0, byref(buf))
-    return ''.join([chr(i) for i in buf[:res_len]])
+    return bytes(buf[:res_len])
 
 def ASN1_TIME_print(asn1_time):
     bio = _BIO(BIO_new(BIO_s_mem()))
@@ -1156,7 +1226,7 @@ def SSL_get_peer_cert_chain(ssl):
     num = OPENSSL_sk_num(stack)
     certs = []
     if num:
-        # why not use sk_value(): because it doesn't cast correct in this case?!
-        # certs = [(sk_value(stack, i)) for i in xrange(num)]
-        certs = [X509(_sk_value(stack, i)) for i in xrange(num)]
+        # why not use _OPENSSL_sk_value(): because it doesn't cast correct in this case?!
+        # certs = [(_OPENSSL_sk_value(stack, i)) for i in range(num)]
+        certs = [X509(_OPENSSL_sk_value(stack, i)) for i in range(num)]
     return stack, num, certs

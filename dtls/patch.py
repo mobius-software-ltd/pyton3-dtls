@@ -42,6 +42,7 @@ from weakref import proxy
 import errno
 
 from .sslconnection import SSLConnection, PROTOCOL_DTLS, PROTOCOL_DTLSv1, PROTOCOL_DTLSv1_2
+from .sslconnection import DTLS_OPENSSL_VERSION_NUMBER, DTLS_OPENSSL_VERSION, DTLS_OPENSSL_VERSION_INFO
 from .sslconnection import SSL_BUILD_CHAIN_FLAG_NONE, SSL_BUILD_CHAIN_FLAG_UNTRUSTED, \
     SSL_BUILD_CHAIN_FLAG_NO_ROOT, SSL_BUILD_CHAIN_FLAG_CHECK, SSL_BUILD_CHAIN_FLAG_IGNORE_ERROR, SSL_BUILD_CHAIN_FLAG_CLEAR_ERROR
 from .err import raise_as_ssl_module_error, patch_ssl_errors
@@ -49,7 +50,7 @@ from .err import raise_as_ssl_module_error, patch_ssl_errors
 
 def do_patch():
     import ssl as _ssl  # import to be avoided if ssl module is never patched
-    global _orig_SSLSocket_init, _orig_get_server_certificate
+    global _orig_SSLSocket_init, _orig_get_server_certificate, _orig_SSLSocket_close, _orig_SSLSocket_settimeout, _orig_SSLSocket___del__
     global ssl
     ssl = _ssl
     if hasattr(ssl, "PROTOCOL_DTLSv1"):
@@ -62,6 +63,9 @@ def do_patch():
     ssl._PROTOCOL_NAMES[PROTOCOL_DTLS] = "DTLS"
     ssl._PROTOCOL_NAMES[PROTOCOL_DTLSv1] = "DTLSv1"
     ssl._PROTOCOL_NAMES[PROTOCOL_DTLSv1_2] = "DTLSv1.2"
+    ssl.DTLS_OPENSSL_VERSION_NUMBER = DTLS_OPENSSL_VERSION_NUMBER
+    ssl.DTLS_OPENSSL_VERSION = DTLS_OPENSSL_VERSION
+    ssl.DTLS_OPENSSL_VERSION_INFO = DTLS_OPENSSL_VERSION_INFO
     ssl.SSL_BUILD_CHAIN_FLAG_NONE = SSL_BUILD_CHAIN_FLAG_NONE
     ssl.SSL_BUILD_CHAIN_FLAG_UNTRUSTED = SSL_BUILD_CHAIN_FLAG_UNTRUSTED
     ssl.SSL_BUILD_CHAIN_FLAG_NO_ROOT = SSL_BUILD_CHAIN_FLAG_NO_ROOT
@@ -70,10 +74,17 @@ def do_patch():
     ssl.SSL_BUILD_CHAIN_FLAG_CLEAR_ERROR = SSL_BUILD_CHAIN_FLAG_CLEAR_ERROR
     _orig_SSLSocket_init = ssl.SSLSocket.__init__
     _orig_get_server_certificate = ssl.get_server_certificate
+    _orig_SSLSocket_close = ssl.SSLSocket.close
+    _orig_SSLSocket_settimeout = ssl.SSLSocket.settimeout
+    _orig_SSLSocket___del__ = ssl.SSLSocket.__del__
     ssl.SSLSocket.__init__ = _SSLSocket_init
     ssl.get_server_certificate = _get_server_certificate
+    ssl.SSLSocket.close = _SSLSocket_close
+    ssl.SSLSocket.settimeout = _SSLSocket_settimeout
+    ssl.SSLSocket.__del__ = _SSLSocket___del__
     patch_ssl_errors()
     raise_as_ssl_module_error()
+
 
 def _wrap_socket(sock, keyfile=None, certfile=None,
                  server_side=False, cert_reqs=CERT_NONE,
@@ -92,6 +103,7 @@ def _wrap_socket(sock, keyfile=None, certfile=None,
                          ciphers=ciphers,
                          cb_user_config_ssl_ctx=cb_user_config_ssl_ctx,
                          cb_user_config_ssl=cb_user_config_ssl)
+
 
 def _get_server_certificate(addr, ssl_version=PROTOCOL_SSLv23, ca_certs=None):
     """Retrieve a server certificate
@@ -115,14 +127,19 @@ def _get_server_certificate(addr, ssl_version=PROTOCOL_SSLv23, ca_certs=None):
                         cert_reqs=cert_reqs, ca_certs=ca_certs)
     s.connect(addr)
     dercert = s.getpeercert(True)
+    # s = s.unwrap()
     s.close()
     return ssl.DER_cert_to_PEM_cert(dercert)
 
-_keepalives = []
+
+# _keepalives = []
+
+
 def _sockclone_kwargs(old):
     """Replace socket(_sock=old._sock) with socket(**_sockclone_kwargs(old))"""
-    _keepalives.append(old) # old socket would be gc'd and implicitly closed otherwise
+    # _keepalives.append(old) # old socket would be gc'd and implicitly closed otherwise
     return dict(family=old.family, type=old.type, proto=old.proto, fileno=old.fileno())
+
 
 def _SSLSocket_init(self, sock=None, keyfile=None, certfile=None,
                     server_side=False, cert_reqs=CERT_NONE,
@@ -132,12 +149,13 @@ def _SSLSocket_init(self, sock=None, keyfile=None, certfile=None,
                     suppress_ragged_eofs=True, npn_protocols=None, ciphers=None,
                     server_hostname=None,
                     _context=None,
+                    _session=None,
                     cb_user_config_ssl_ctx=None,
                     cb_user_config_ssl=None):
     is_connection = is_datagram = False
     if isinstance(sock, SSLConnection):
         is_connection = True
-    elif hasattr(sock, "type") and sock.type == SOCK_DGRAM:
+    elif hasattr(sock, "type") and (sock.type & SOCK_DGRAM) == SOCK_DGRAM:
         is_datagram = True
     if not is_connection and not is_datagram:
         # Non-DTLS code path
@@ -145,51 +163,33 @@ def _SSLSocket_init(self, sock=None, keyfile=None, certfile=None,
                                     certfile=certfile, server_side=server_side,
                                     cert_reqs=cert_reqs,
                                     ssl_version=ssl_version, ca_certs=ca_certs,
-                                    do_handshake_on_connect=
-                                    do_handshake_on_connect,
-                                    family=family, type=type, proto=proto,
-                                    fileno=fileno,
+                                    do_handshake_on_connect=do_handshake_on_connect,
+                                    family=family, type=type, proto=proto, fileno=fileno,
                                     suppress_ragged_eofs=suppress_ragged_eofs,
                                     npn_protocols=npn_protocols,
                                     ciphers=ciphers,
                                     server_hostname=server_hostname,
-                                    _context=_context)
+                                    _context=_context, _session=_session)
     # DTLS code paths: datagram socket and newly accepted DTLS connection
     if is_datagram:
         socket.__init__(self, **_sockclone_kwargs(sock))
     else:
         socket.__init__(self, **_sockclone_kwargs(sock.get_socket(True)))
 
+    # hmm, why?
+    if hasattr(sock, 'timeout'):
+        self.settimeout(sock.timeout)
+    if isinstance(sock, socket):
+        sock.detach()
+
     if certfile and not keyfile:
         keyfile = certfile
-    if is_datagram:
-        # see if it's connected
-        try:
-            socket.getpeername(self)
-        except socket_error as e:
-            if e.errno != errno.ENOTCONN:
-                raise
-            # no, no connection yet
-            self._connected = False
-            self._sslobj = None
-        else:
-            # yes, create the SSL object
-            self._connected = True
-            self._sslobj = SSLConnection(sock, keyfile, certfile,
-                                         server_side, cert_reqs,
-                                         ssl_version, ca_certs,
-                                         do_handshake_on_connect,
-                                         suppress_ragged_eofs, ciphers,
-                                         cb_user_config_ssl_ctx=cb_user_config_ssl_ctx,
-                                         cb_user_config_ssl=cb_user_config_ssl)
-    else:
-        self._connected = True
-        self._sslobj = sock
 
     class FakeContext(object):
         check_hostname = False
 
     self._context = FakeContext()
+    self.server_side = server_side
     self.keyfile = keyfile
     self.certfile = certfile
     self.cert_reqs = cert_reqs
@@ -212,8 +212,34 @@ def _SSLSocket_init(self, sock=None, keyfile=None, certfile=None,
     # Extra
     self.getpeercertchain = MethodType(_getpeercertchain, proxy(self))
 
+    if is_datagram:
+        self._connected = False
+        # see if it's connected
+        try:
+            socket.getpeername(self)
+        except socket_error as e:
+            if e.errno != errno.ENOTCONN:
+                raise
+            # no, no connection yet
+            self._sslobj = None
+        else:
+            # yes, create the SSL object
+            self._sslobj = SSLConnection(self, keyfile, certfile,
+                                         server_side, cert_reqs,
+                                         ssl_version, ca_certs,
+                                         do_handshake_on_connect,
+                                         suppress_ragged_eofs, ciphers,
+                                         cb_user_config_ssl_ctx=cb_user_config_ssl_ctx,
+                                         cb_user_config_ssl=cb_user_config_ssl)
+            self._connected = True
+    else:
+        self._connected = True
+        self._sslobj = sock
+
+
 def _getpeercertchain(self, binary_form=False):
     return self._sslobj.getpeercertchain(binary_form)
+
 
 def _SSLSocket_listen(self, ignored):
     if self._connected:
@@ -228,6 +254,12 @@ def _SSLSocket_listen(self, ignored):
                                  self.suppress_ragged_eofs, self.ciphers,
                                  cb_user_config_ssl_ctx=self._user_config_ssl_ctx,
                                  cb_user_config_ssl=self._user_config_ssl)
+    if hasattr(self, 'timeout'):
+        try:
+            self._sslobj._sock.settimeout(self.timeout)
+        except:
+            pass
+
 
 def _SSLSocket_accept(self):
     if self._connected:
@@ -247,9 +279,12 @@ def _SSLSocket_accept(self):
                                  cb_user_config_ssl=self._user_config_ssl)
     return new_ssl_sock, addr
 
+
 def _SSLSocket_real_connect(self, addr, return_errno):
     if self._connected:
         raise ValueError("attempt to connect already-connected SSLSocket!")
+    if self._sslobj:
+        raise RuntimeError("Overwriting SSLConnection?")
     self._sslobj = SSLConnection(socket(**_sockclone_kwargs(self)),
                                  self.keyfile, self.certfile, False,
                                  self.cert_reqs, self.ssl_version,
@@ -258,6 +293,12 @@ def _SSLSocket_real_connect(self, addr, return_errno):
                                  self.suppress_ragged_eofs, self.ciphers,
                                  cb_user_config_ssl_ctx=self._user_config_ssl_ctx,
                                  cb_user_config_ssl=self._user_config_ssl)
+    if hasattr(self, 'timeout'):
+        try:
+            self._sslobj._sock.settimeout(self.timeout)
+        except:
+            pass
+
     try:
         self._sslobj.connect(addr)
     except socket_error as e:
@@ -270,11 +311,36 @@ def _SSLSocket_real_connect(self, addr, return_errno):
     return 0
 
 
-if __name__ == "__main__":
-    do_patch()
-
 def _SSLSocket_get_timeout(self):
     return self._sslobj.get_timeout()
 
+
 def _SSLSocket_handle_timeout(self):
     return self._sslobj.handle_timeout()
+
+
+def _SSLSocket_close(self):
+    try:
+        _orig_SSLSocket_close(self)
+    except Exception as e:
+        pass
+
+
+def _SSLSocket_settimeout(self, timeout):
+    try:
+        self._sslobj._sock.settimeout(timeout)
+    except:
+        pass
+    return _orig_SSLSocket_settimeout(self, timeout)
+
+
+def _SSLSocket___del__(self):
+    _orig_SSLSocket___del__(self)
+    try:
+        del self._sslobj
+    except:
+        pass
+
+
+if __name__ == "__main__":
+    do_patch()

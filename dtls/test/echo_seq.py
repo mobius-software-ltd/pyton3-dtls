@@ -19,12 +19,12 @@
 """PyDTLS sequential echo
 
 This script runs a sequential echo server. It is sequential in that it will
-respond without error only to a single sclient that invokes the following steps
+respond without error only to a single client that invokes the following steps
 in order:
     * DTLS cookie exchange on port 28000 of localhost
     * DTLS handshake (application-default ciphers)
     * Write and receive echo back for an arbitrary number of datagrams
-    * Isue shutdown notification and receive the shutdown notification response
+    * Issue shutdown notification and receive the shutdown notification response
 
 Note that this script's operation is slow and inefficient on purpose: it
 invokes the demux without socket select, but with 5-second timeouts after
@@ -41,10 +41,12 @@ from dtls.err import SSLError, SSL_ERROR_WANT_READ, SSL_ERROR_ZERO_RETURN
 
 
 def main():
+    cert_path = path.join(path.abspath(path.dirname(__file__)), "certs")
+
     sck = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sck.bind(("127.0.0.1", 28000))
     sck.settimeout(30)
-    cert_path = path.join(path.abspath(path.dirname(__file__)), "certs")
+
     scn = SSLConnection(
         sck,
         keyfile=path.join(cert_path, "keycert.pem"),
@@ -52,8 +54,8 @@ def main():
         server_side=True,
         ca_certs=path.join(cert_path, "ca-cert.pem"),
         do_handshake_on_connect=False)
-    cnt = 0
 
+    cnt = 0
     while True:
         cnt += 1
         print("Listen invocation: %d" % cnt)
@@ -70,9 +72,9 @@ def main():
     cnt = 0
     while True:
         cnt += 1
-        print("Listen invocation: %d" % cnt)
-        peer_address = scn.listen()
-        assert not peer_address
+        # print("Listen invocation: %d" % cnt)
+        # peer_address = scn.listen()
+        # assert not peer_address
         print("Handshake invocation: %d" % cnt)
         try:
             conn.do_handshake()
@@ -86,9 +88,9 @@ def main():
     cnt = 0
     while True:
         cnt += 1
-        print("Listen invocation: %d" % cnt)
-        peer_address = scn.listen()
-        assert not peer_address
+        # print("Listen invocation: %d" % cnt)
+        # peer_address = scn.listen()
+        # assert not peer_address
         print("Read invocation: %d" % cnt)
         try:
             message = conn.read()
@@ -98,24 +100,29 @@ def main():
             if err.args[0] == SSL_ERROR_ZERO_RETURN:
                 break
             raise
-        print(message)
-        conn.write("Back to you: " + message)
+        print(message.decode())
+        conn.write(str("Back to you: " + message.decode()).encode())
 
     cnt = 0
     while True:
         cnt += 1
-        print("Listen invocation: %d" % cnt)
-        peer_address = scn.listen()
-        assert not peer_address
+        # print("Listen invocation: %d" % cnt)
+        # peer_address = scn.listen()
+        # assert not peer_address
         print("Shutdown invocation: %d" % cnt)
         try:
-            s = conn.shutdown()
-            s.shutdown(socket.SHUT_RDWR)
+            s = conn.unwrap()
+            s.close()
         except SSLError as err:
             if err.errno == 502:
                 continue
             raise
         break
+
+    sck.close()
+
+    pass
+
 
 if __name__ == "__main__":
     main()

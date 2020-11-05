@@ -47,7 +47,7 @@ def force_routing_demux():
     if _routing:
         return False  # no change - already loaded
     global UDPDemux, _default_demux
-    import router
+    from . import router
     _default_demux = UDPDemux
     UDPDemux = router.UDPDemux
     _routing = True

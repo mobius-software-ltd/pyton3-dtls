@@ -28,8 +28,8 @@ from argparse import ArgumentParser
 from pickle import dump, load
 from setuptools import setup
 
-NAME = "Dtls"
-VERSION = "1.2.3"
+NAME = "python3-dtls"
+VERSION = "1.1.0"
 
 if __name__ == "__main__":
     # Full upload sequence for new version:
@@ -52,11 +52,11 @@ if __name__ == "__main__":
                                .translate({ord("\r"): None})
             with open("README.rst", "wb") as readme:
                 readme.write(long_description)
-        except OSError:
+        except ModuleNotFoundError:
             # pandoc is not installed, fallback to using raw contents
             long_description = open('README.md').read()
     else:
-        long_description = open("README.rst").read()
+        long_description = open("README.md").read()
 
     top_package_plat_files_file = "dtls_package_files"
 
@@ -71,9 +71,10 @@ if __name__ == "__main__":
                 raise ValueError("Unknown platform")
             prebuilt_path = prebuilt_platform_root + "/" + platform
             config = {"MANIFEST_DIR": prebuilt_path}
-            execfile(prebuilt_path + "/manifest.pycfg", config)
-            top_package_plat_files = map(lambda x: prebuilt_path + "/" + x,
-                                         config["FILES"])
+            exec(open(prebuilt_path + "/manifest.pycfg").read(), config)
+            # top_package_plat_files = map(lambda x: prebuilt_path + "/" + x,
+            #                              config["FILES"])
+            top_package_plat_files = [prebuilt_path + "/" + x for x in config["FILES"]]
             # Save top_package_plat_files with the distribution archive
             with open(top_package_plat_files_file, "wb") as fl:
                 dump(top_package_plat_files, fl)
@@ -100,7 +101,9 @@ if __name__ == "__main__":
           description="Python Datagram Transport Layer Security",
           author="Ray Brown",
           author_email="code@liquibits.com",
-          url="https://github.com/rbit/pydtls",
+          maintainer="Björn Freise",
+          maintainer_email="mcfreis@gmx.net",
+          url="https://github.com/mcfreis/pydtls",
           license="Apache-2.0",
           classifiers=[
               'Development Status :: 5 - Production/Stable',
@@ -110,7 +113,7 @@ if __name__ == "__main__":
               'License :: OSI Approved :: Apache Software License',
               'Operating System :: POSIX :: Linux',
               'Operating System :: Microsoft :: Windows',
-              'Programming Language :: Python :: 3.5',
+              'Programming Language :: Python :: 3.6',
           ],
           long_description=long_description,
           packages=["dtls", "dtls.demux", "dtls.test"],
@@ -123,10 +126,13 @@ if __name__ == "__main__":
           data_files=[('', [top_package_plat_files_file])] if plat_dist else []
     )
     if dist:
-        remove("README.rst")
+        try:
+            remove("README.rst")
+        except FileNotFoundError:
+            pass
         for extra_file in top_package_extra_files:
             remove("dtls/" + extra_file)
         if plat_dist:
             remove(top_package_plat_files_file)
-        rmtree("Dtls.egg-info", True)
+        rmtree("%s.egg-info" % NAME, True)
         rmtree("build", True)

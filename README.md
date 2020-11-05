@@ -65,20 +65,19 @@ been built to be widely compatible with the following:
 
 ## Distributions
 
-PyDTLS requires version 1.1.0 or higher of the OpenSSL
-library. Earlier versions are reported not to offer stable DTLS
-support. Since packaged distributions of this version of OpenSSL are
-available for many popular operating systems, OpenSSL-1.1.0 is an
+PyDTLS requires version 1.1.1 or higher of the OpenSSL
+library. Since packaged distributions of this version of OpenSSL are
+available for many popular operating systems, OpenSSL-1.1.1 is an
 installation requirement before PyDTLS functionality can be called.
 
 In comparison, installation of OpenSSL on Microsoft Windows operating
 systems is inconvenient. For this reason, source distributions of
 PyDTLS are available that include OpenSSL dll's for 32-bit and 64-bit
-Windows. All dll's have been linked with the Visual Studio 2008
+Windows. All dll's have been linked with the Visual Studio 2015
 version of the Microsoft C runtime library, msvcr90.dll, the version
-used by CPython 3.5. Installation of Microsoft redistributable runtime
+used by CPython 3.6. Installation of Microsoft redistributable runtime
 packages should therefore not be required on machines with CPython
-3.5.
+3.6.
 
 The OpenSSL version used by PyDTLS can be determined from the values
 of *sslconnection's* DTLS_OPENSSL_VERSION_NUMBER,

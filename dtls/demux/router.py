@@ -72,7 +72,7 @@ class UDPDemux(object):
                            datagram socket
         """
 
-        if datagram_socket.type != socket.SOCK_DGRAM:
+        if (datagram_socket.type & socket.SOCK_DGRAM) != socket.SOCK_DGRAM:
             raise InvalidSocketError("datagram_socket is not of " +
                                      "type SOCK_DGRAM")
         try:
@@ -102,7 +102,7 @@ class UDPDemux(object):
         a bound, connected datagram socket instance
         """
 
-        if self.connections.has_key(address):
+        if address in self.connections:
             return self.connections[address]
         
         # We need a new datagram socket on a dynamically assigned ephemeral port
@@ -158,7 +158,7 @@ class UDPDemux(object):
         if not self.payload:
             self.payload_peer_address = None
             return
-        if self.connections.has_key(self.payload_peer_address):
+        if self.payload_peer_address in self.connections:
             self.forward()
         else:
             return self.payload_peer_address
@@ -176,7 +176,7 @@ class UDPDemux(object):
 
         assert self.payload
         assert self.payload_peer_address
-        if self.connections.has_key(self.payload_peer_address):
+        if self.payload_peer_address in self.connections:
             conn = self.connections[self.payload_peer_address]
             default = False
         else:
