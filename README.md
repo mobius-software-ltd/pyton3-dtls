@@ -23,7 +23,7 @@ sock.connect(('foo.bar.com', 1234))
 sock.send('Hi there')
 ```
 
-As of version 1.2.0, PyDTLS supports DTLS version 1.2 in addition to
+As of version 1.3.0, PyDTLS supports DTLS version 1.2 in addition to
 version 1.0. This version also introduces forward secrecy using
 elliptic curve cryptography and more fine-grained configuration options.
 
